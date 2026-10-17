@@ -1,0 +1,26 @@
+{{ app_name }} - Subscription Renewed
+
+Hello {{ user_name }}!
+
+Your {{ app_name }} premium subscription has been successfully renewed. Thank you for continuing your journey with us!
+
+Renewal Details:
+- Billing Interval: {{ billing_interval }}
+- Amount Charged: ${{ amount }}
+- Next Billing Date: {{ next_billing_date }}
+- Premium Valid Until: {{ premium_expires_at }}
+
+Your premium features remain active and you can continue to:
+✓ Access signals from the latest completed daily run
+✓ View the latest available options activity
+✓ Use market overview and stock screening tools
+✓ View signal performance through the latest trading day
+
+Thank you for continuing your subscription. We will keep presenting signals with their supporting data and historical context.
+
+Questions about your subscription? Contact our support team.
+
+This email was sent automatically. Please do not reply.
+Stop optional product emails: {{ unsubscribe_url }}
+Verification, security, and billing emails will continue.
+© {{ app_name }} Team

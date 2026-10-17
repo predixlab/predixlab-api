@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Subscription Renewed</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #333; }
+        .badge { display: inline-block; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 8px 20px; border-radius: 20px; font-weight: bold; margin: 10px 0; }
+        .content { margin-bottom: 30px; }
+        .renewal-info { background-color: #d4edda; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; }
+        .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .highlight { color: #28a745; font-weight: bold; }
+        .amount { font-size: 18px; font-weight: bold; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+            <div class="badge">✓ RENEWED</div>
+        </div>
+
+        <div class="content">
+            <h2>Your Subscription Has Been Renewed</h2>
+            <p>Hello {{ user_name }}!</p>
+            <p>Your {{ app_name }} premium subscription has been successfully renewed. Thank you for continuing your journey with us!</p>
+
+            <div class="renewal-info">
+                <strong>📋 Renewal Details:</strong>
+                <p style="margin: 10px 0 5px 0;">Billing Interval: <span class="highlight">{{ billing_interval }}</span></p>
+                <p style="margin: 5px 0;">Amount Charged: <span class="amount">${{ amount }}</span></p>
+                <p style="margin: 5px 0;">Next Billing Date: <span class="highlight">{{ next_billing_date }}</span></p>
+                <p style="margin: 5px 0;">Premium Valid Until: <span class="highlight">{{ premium_expires_at }}</span></p>
+            </div>
+
+            <p>Your premium features remain active and you can continue to:</p>
+            <ul>
+                <li>Access signals from the latest completed daily run</li>
+                <li>View the latest available options activity</li>
+                <li>Use market overview and stock screening tools</li>
+                <li>View signal performance through the latest trading day</li>
+            </ul>
+
+            <p>Thank you for continuing your subscription. We will keep presenting signals with their supporting data and historical context.</p>
+        </div>
+
+        <div class="footer">
+            <p>Questions about your subscription? Contact our support team.</p>
+            <p>This email was sent automatically. Please do not reply.</p>
+            <p><a href="{{ unsubscribe_url }}">Stop optional product emails</a>. Verification, security, and billing emails will continue.</p>
+            <p>&copy; {{ app_name }} Team</p>
+        </div>
+    </div>
+</body>
+</html>

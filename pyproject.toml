@@ -1,0 +1,48 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.12"
+dependencies = [
+    "aiosmtplib==4.0.1",
+    "apscheduler>=3.11.0",
+    "authlib==1.6.1",
+    "azure-communication-email>=1.0.0",
+    "celery==5.3.4",
+    "email-validator==2.1.0",
+    "fastapi==0.116.1",
+    "httpx==0.28.1",
+    "itsdangerous==2.1.2",
+    "jinja2==3.1.2",
+    "numpy==2.3.0",
+    "pandas==2.3.0",
+    "passlib[bcrypt]==1.7.4",
+    "plotly==6.3.0",
+    "pyarrow>=18.0.0",
+    "pydantic==2.5.0",
+    "pydantic-settings==2.1.0",
+    "pymongo>=4.10.0",
+    "python-dotenv==1.0.0",
+    "python-jose[cryptography]==3.5.0",
+    "python-multipart==0.0.20",
+    "redis==6.4.0",
+    "stripe==10.12.0",
+    "uvicorn[standard]==0.35.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=4.1.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

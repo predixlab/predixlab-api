@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Subscription Cancelled</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #333; }
+        .content { margin-bottom: 30px; }
+        .cancellation-info { background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; }
+        .important-note { background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007bff; }
+        .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .highlight { color: #dc3545; font-weight: bold; }
+        .cta-button { display: inline-block; background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+        </div>
+
+        <div class="content">
+            <h2>Your Subscription Has Been Cancelled</h2>
+            <p>Hello {{ user_name }}!</p>
+            <p>We've received your request to cancel your {{ app_name }} premium subscription. We're sorry to see you go!</p>
+
+            <div class="cancellation-info">
+                <strong>📋 Cancellation Details:</strong>
+                <p style="margin: 10px 0 5px 0;">Cancellation Date: <span class="highlight">{{ cancellation_date }}</span></p>
+                <p style="margin: 5px 0;">Premium Access Until: <span class="highlight">{{ premium_expires_at }}</span></p>
+            </div>
+
+            <div class="important-note">
+                <strong>ℹ️ Important Information:</strong>
+                <p style="margin: 10px 0 5px 0;">• Your premium features will remain active until <strong>{{ premium_expires_at }}</strong></p>
+                <p style="margin: 5px 0;">• You won't be charged again</p>
+                <p style="margin: 5px 0;">• After {{ premium_expires_at }}, your account will revert to the free plan</p>
+                <p style="margin: 5px 0;">• You can resubscribe anytime to regain premium access</p>
+            </div>
+
+            <p><strong>What happens next?</strong></p>
+            <ul>
+                <li>Continue enjoying premium features until {{ premium_expires_at }}</li>
+                <li>After that date, you'll have access to free tier features only</li>
+                <li>Your account data and settings will be preserved</li>
+            </ul>
+
+            <p>We'd love to hear your feedback! If there's anything we could have done better, please let us know. Your input helps us improve our service for everyone.</p>
+
+            <p>Changed your mind? You can resubscribe anytime and pick up right where you left off!</p>
+        </div>
+
+        <div class="footer">
+            <p>Have questions? Our support team is here to help.</p>
+            <p>This email was sent automatically. Please do not reply.</p>
+            <p><a href="{{ unsubscribe_url }}">Stop optional product emails</a>. Verification, security, and billing emails will continue.</p>
+            <p>&copy; {{ app_name }} Team</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{{ app_name }} - Subscription Cancelled
+
+Hello {{ user_name }}!
+
+We've received your request to cancel your {{ app_name }} premium subscription. We're sorry to see you go!
+
+Cancellation Details:
+- Cancellation Date: {{ cancellation_date }}
+- Premium Access Until: {{ premium_expires_at }}
+
+Important Information:
+• Your premium features will remain active until {{ premium_expires_at }}
+• You won't be charged again
+• After {{ premium_expires_at }}, your account will revert to the free plan
+• You can resubscribe anytime to regain premium access
+
+What happens next?
+✓ Continue enjoying premium features until {{ premium_expires_at }}
+✓ After that date, you'll have access to free tier features only
+✓ Your account data and settings will be preserved
+
+We'd love to hear your feedback! If there's anything we could have done better, please let us know. Your input helps us improve our service for everyone.
+
+Changed your mind? You can resubscribe anytime and pick up right where you left off!
+
+Have questions? Our support team is here to help.
+
+This email was sent automatically. Please do not reply.
+Stop optional product emails: {{ unsubscribe_url }}
+Verification, security, and billing emails will continue.
+© {{ app_name }} Team

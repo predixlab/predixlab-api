@@ -1,0 +1,18 @@
+Welcome to {{ app_name }}!
+
+Hello {{ user_name }}!
+
+Thank you for registering with {{ app_name }}. You can now enjoy the following features:
+
+✓ Review daily signals
+✓ Examine supporting data and historical performance
+✓ Use market overview and stock screening tools
+
+Note: Free accounts can view data from 10 days ago or earlier. Premium access includes results from the latest completed daily run.
+
+We hope the data and historical context make each signal easier to examine.
+
+This email was sent automatically. Please do not reply.
+Stop optional product emails: {{ unsubscribe_url }}
+Verification, security, and billing emails will continue.
+© {{ app_name }} Team

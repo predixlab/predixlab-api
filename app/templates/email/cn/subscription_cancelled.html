@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>订阅已取消</title>
+    <style>
+        body { font-family: Arial, "Microsoft YaHei", sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #333; }
+        .content { margin-bottom: 30px; }
+        .cancellation-info { background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; }
+        .important-note { background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007bff; }
+        .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .highlight { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+        </div>
+
+        <div class="content">
+            <h2>您的订阅已取消</h2>
+            <p>您好 {{ user_name }}！</p>
+            <p>我们已收到您取消 {{ app_name }} 高级会员订阅的请求。很遗憾看到您离开！</p>
+
+            <div class="cancellation-info">
+                <strong>📋 取消详情：</strong>
+                <p style="margin: 10px 0 5px 0;">取消日期：<span class="highlight">{{ cancellation_date }}</span></p>
+                <p style="margin: 5px 0;">会员有效期至：<span class="highlight">{{ premium_expires_at }}</span></p>
+            </div>
+
+            <div class="important-note">
+                <strong>ℹ️ 重要信息：</strong>
+                <p style="margin: 10px 0 5px 0;">• 您的高级功能将保持激活状态直到 <strong>{{ premium_expires_at }}</strong></p>
+                <p style="margin: 5px 0;">• 我们不会再向您收费</p>
+                <p style="margin: 5px 0;">• 在 {{ premium_expires_at }} 之后，您的账户将恢复为免费计划</p>
+                <p style="margin: 5px 0;">• 您可以随时重新订阅以恢复高级会员权限</p>
+            </div>
+
+            <p><strong>接下来会发生什么？</strong></p>
+            <ul>
+                <li>继续享受高级功能直到 {{ premium_expires_at }}</li>
+                <li>在该日期之后，您将只能访问免费版功能</li>
+                <li>您的账户数据和设置将被保留</li>
+            </ul>
+
+            <p>我们很希望听到您的反馈！如果我们有什么可以改进的地方，请告诉我们。您的意见有助于我们为所有人改进服务。</p>
+
+            <p>改变主意了吗？您可以随时重新订阅，并从上次离开的地方继续！</p>
+        </div>
+
+        <div class="footer">
+            <p>有疑问？我们的客服团队随时为您提供帮助。</p>
+            <p>此邮件为系统自动发送，请勿回复。</p>
+            <p><a href="{{ unsubscribe_url }}">停止接收可选产品邮件</a>。验证码、安全通知和账单邮件仍会正常发送。</p>
+            <p>&copy; {{ app_name }} 团队</p>
+        </div>
+    </div>
+</body>
+</html>

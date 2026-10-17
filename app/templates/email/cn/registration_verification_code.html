@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>注册验证码</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #333; }
+        .content { margin-bottom: 30px; }
+        .code-box { background-color: #e8f5e8; border: 2px dashed #28a745; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }
+        .code { font-size: 32px; font-weight: bold; color: #28a745; letter-spacing: 8px; font-family: 'Courier New', monospace; }
+        .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .warning { color: #dc3545; font-size: 14px; margin-top: 15px; }
+        .welcome-note { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+        </div>
+        
+        <div class="content">
+            <h2>🎉 欢迎注册 {{ app_name }}！</h2>
+            <p>您好！</p>
+            <p>感谢您选择注册 {{ app_name }}。为了验证您的邮箱地址，请使用以下验证码完成注册：</p>
+            
+            <div class="code-box">
+                <div class="code">{{ verification_code }}</div>
+            </div>
+            
+            <p>该验证码将在 <strong>10分钟</strong> 后过期，请尽快完成注册。</p>
+            
+            <div class="welcome-note">
+                <p><strong>注册成功后，您可以：</strong></p>
+                <ul>
+                    <li>查看每日信号</li>
+                    <li>使用市场概览和股票筛选</li>
+                    <li>查看价格图表和历史信号表现</li>
+                </ul>
+            </div>
+            
+            <div class="warning">
+                <p>⚠️ 如果这不是您本人的操作，请忽略此邮件。</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>此邮件由系统自动发送，请勿回复。</p>
+            <p>&copy; {{ app_name }} Team</p>
+        </div>
+    </div>
+</body>
+</html>

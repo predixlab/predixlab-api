@@ -1,0 +1,15 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+.env
+data/
+# Local-run helper scripts and docker config (not part of the project)
+.local-run/
+.dockercfg/
+.dockerbin/
+.pipcache/

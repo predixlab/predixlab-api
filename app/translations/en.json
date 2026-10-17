@@ -1,0 +1,12 @@
+{
+  "email": {
+    "subjects": {
+      "login_verification": "{app_name} - Login Verification Code",
+      "registration_verification": "{app_name} - Registration Verification Code",
+      "welcome": "Welcome to {app_name}!",
+      "subscription_success": "Welcome to {app_name} Premium!",
+      "subscription_renewed": "{app_name} - Subscription Renewed",
+      "subscription_cancelled": "{app_name} - Subscription Cancelled"
+    }
+  }
+}

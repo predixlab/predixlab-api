@@ -1,0 +1,44 @@
+name: Trigger auto deployment for predixlab-api
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches:
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/predixlab-api-AutoDeployTrigger-76f4639c-7622-4ecf-805f-2cd18b5cb4bf.yml'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write #This is required for requesting the OIDC JWT Token
+      contents: read #Required when GH token is used to authenticate with private repo
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v7.0.1
+
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.PREDIXLABAPI_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.PREDIXLABAPI_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.PREDIXLABAPI_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          dockerfilePath: Dockerfile
+          registryUrl: predixlabacr.azurecr.io
+          registryUsername: ${{ secrets.PREDIXLABAPI_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.PREDIXLABAPI_REGISTRY_PASSWORD }}
+          containerAppName: predixlab-api
+          resourceGroup: predixlab
+          imageToBuild: predixlabacr.azurecr.io/predixlab-api:${{ github.sha }}

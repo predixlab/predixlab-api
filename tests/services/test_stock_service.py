@@ -1,0 +1,566 @@
+"""Unit tests for the stock service."""
+import pytest
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+import pandas as pd
+from pathlib import Path
+
+from app.services.stock_service import StockService
+from app.models.stock import (
+    Direction, DailyPick, Prediction, StockDataResponse, StockData,
+    DailyPicksResponse, AvailableDatesResponse
+)
+from app.models.user import UserRole
+
+
+class TestStockServicePeriodValidation:
+    """Tests for period validation and conversion."""
+
+    def test_validate_and_convert_period_none(self):
+        """Test that None period returns None."""
+        service = StockService()
+
+        result = service._validate_and_convert_period(None)
+
+        assert result is None
+
+    def test_validate_and_convert_period_1m(self):
+        """Test converting 1 month period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("1m")
+
+        assert result == 30
+
+    def test_validate_and_convert_period_3m(self):
+        """Test converting 3 month period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("3m")
+
+        assert result == 90
+
+    def test_validate_and_convert_period_6m(self):
+        """Test converting 6 month period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("6m")
+
+        assert result == 180
+
+    def test_validate_and_convert_period_9m(self):
+        """Test converting 9 month period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("9m")
+
+        assert result == 270
+
+    def test_validate_and_convert_period_1y(self):
+        """Test converting 1 year period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("1y")
+
+        assert result == 365
+
+    def test_validate_and_convert_period_2y(self):
+        """Test converting 2 year period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("2y")
+
+        assert result == 730
+
+    def test_validate_and_convert_period_3y(self):
+        """Test converting 3 year period."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("3y")
+
+        assert result == 1095
+
+    def test_validate_and_convert_period_uppercase(self):
+        """Test that uppercase periods are converted correctly."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("1M")
+
+        assert result == 30
+
+    def test_validate_and_convert_period_with_spaces(self):
+        """Test that periods with spaces are trimmed."""
+        service = StockService()
+
+        result = service._validate_and_convert_period("  1m  ")
+
+        assert result == 30
+
+    def test_validate_and_convert_period_invalid(self):
+        """Test that invalid period raises ValueError."""
+        service = StockService()
+
+        with pytest.raises(ValueError) as exc_info:
+            service._validate_and_convert_period("invalid")
+
+        assert "Invalid period" in str(exc_info.value)
+
+
+class TestStockServiceTradingDays:
+    """Tests for trading day calculations."""
+
+    def test_get_nth_trading_day_after_found(self):
+        """Test getting nth trading day when found."""
+        service = StockService()
+        trading_dates = {
+            "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05",
+            "2024-01-08", "2024-01-09", "2024-01-10"
+        }
+
+        result = service._get_nth_trading_day_after("2024-01-02", 3, trading_dates)
+
+        assert result == "2024-01-05"
+
+    def test_get_nth_trading_day_after_with_weekend(self):
+        """Test getting nth trading day skipping weekends."""
+        service = StockService()
+        # Jan 5 is Friday, Jan 8 is Monday
+        trading_dates = {
+            "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05",
+            "2024-01-08", "2024-01-09", "2024-01-10"
+        }
+
+        result = service._get_nth_trading_day_after("2024-01-05", 1, trading_dates)
+
+        assert result == "2024-01-08"
+
+    def test_get_nth_trading_day_after_not_found(self):
+        """Test getting nth trading day when not found."""
+        service = StockService()
+        trading_dates = {"2024-01-02", "2024-01-03"}
+
+        result = service._get_nth_trading_day_after("2024-01-02", 10, trading_dates)
+
+        assert result is None
+
+    def test_get_nth_trading_day_after_invalid_date(self):
+        """Test getting nth trading day with invalid start date."""
+        service = StockService()
+        trading_dates = {"2024-01-02", "2024-01-03"}
+
+        result = service._get_nth_trading_day_after("invalid-date", 1, trading_dates)
+
+        assert result is None
+
+
+class TestStockServiceDataFilters:
+    """Tests for data filtering functionality."""
+
+    def test_apply_data_filters_no_filters(self):
+        """Test that no filters returns original data."""
+        service = StockService()
+
+        stock_data = [
+            StockData(symbol="AAPL", date=datetime(2024, 1, 1), open=100, high=105, low=99, close=104, volume=1000),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 2), open=104, high=110, low=103, close=108, volume=1100),
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=2)
+
+        result = service._apply_data_filters(response, None, None, None, None)
+
+        assert result.total_records == 2
+        assert len(result.data) == 2
+
+    def test_apply_data_filters_with_date_range(self):
+        """Test filtering by date range."""
+        service = StockService()
+
+        stock_data = [
+            StockData(symbol="AAPL", date=datetime(2024, 1, 1), open=100, high=105, low=99, close=104, volume=1000),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+
+        start_datetime = datetime(2024, 1, 10)
+        end_datetime = datetime(2024, 1, 20)
+
+        result = service._apply_data_filters(response, start_datetime, end_datetime, None, None)
+
+        assert result.total_records == 1
+        assert result.data[0].date == datetime(2024, 1, 15)
+
+    def test_apply_data_filters_with_start_date_only(self):
+        """Test filtering by start date only."""
+        service = StockService()
+
+        stock_data = [
+            StockData(symbol="AAPL", date=datetime(2024, 1, 1), open=100, high=105, low=99, close=104, volume=1000),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+
+        start_datetime = datetime(2024, 1, 10)
+
+        result = service._apply_data_filters(response, start_datetime, None, None, None)
+
+        assert result.total_records == 2
+
+    def test_apply_data_filters_with_end_date_only(self):
+        """Test filtering by end date only."""
+        service = StockService()
+
+        stock_data = [
+            StockData(symbol="AAPL", date=datetime(2024, 1, 1), open=100, high=105, low=99, close=104, volume=1000),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+
+        end_datetime = datetime(2024, 1, 20)
+
+        result = service._apply_data_filters(response, None, end_datetime, None, None)
+
+        assert result.total_records == 2
+
+    def test_apply_data_filters_period_anchors_on_latest_bar(self):
+        """Period windows count back from the newest bar, not from today.
+
+        Price data always lags real time. Anchoring the window on `now` used to
+        return a truncated series, or nothing at all once the lag exceeded the
+        requested period.
+        """
+        service = StockService()
+
+        latest = datetime(2024, 4, 24)
+        stock_data = [
+            StockData(
+                symbol="AAPL",
+                date=latest - timedelta(days=offset),
+                open=100, high=105, low=99, close=104, volume=1000,
+            )
+            for offset in (0, 30, 80, 200, 400)
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=5)
+
+        result = service._apply_data_filters(response, None, None, 90, "3m")
+
+        assert result.total_records == 3
+        assert min(data.date for data in result.data) == latest - timedelta(days=80)
+
+    def test_apply_data_filters_period_with_stale_data(self):
+        """A series that ends months ago still returns its most recent window."""
+        service = StockService()
+
+        latest = datetime.now() - timedelta(days=400)
+        stock_data = [
+            StockData(
+                symbol="AAPL",
+                date=latest - timedelta(days=offset),
+                open=100, high=105, low=99, close=104, volume=1000,
+            )
+            for offset in (0, 10, 20)
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+
+        result = service._apply_data_filters(response, None, None, 90, "3m")
+
+        assert result.total_records == 3
+
+    def test_apply_data_filters_period_excludes_older_bars(self):
+        """Bars outside the window are dropped even when the series is stale."""
+        service = StockService()
+
+        latest = datetime.now() - timedelta(days=400)
+        stock_data = [
+            StockData(
+                symbol="AAPL",
+                date=latest - timedelta(days=offset),
+                open=100, high=105, low=99, close=104, volume=1000,
+            )
+            for offset in (0, 100)
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=2)
+
+        result = service._apply_data_filters(response, None, None, 90, "3m")
+
+        assert result.total_records == 1
+        assert result.data[0].date == latest
+
+    def test_apply_data_filters_period_on_empty_series(self):
+        """An empty series stays empty rather than raising."""
+        service = StockService()
+
+        response = StockDataResponse(symbol="AAPL", data=[], total_records=0)
+
+        result = service._apply_data_filters(response, None, None, 90, "3m")
+
+        assert result.total_records == 0
+        assert result.data == []
+
+    def test_apply_data_filters_date_range_takes_priority_over_period(self):
+        """An explicit range wins over the period shorthand."""
+        service = StockService()
+
+        stock_data = [
+            StockData(symbol="AAPL", date=datetime(2024, 1, 1), open=100, high=105, low=99, close=104, volume=1000),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
+            StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
+        ]
+        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+
+        result = service._apply_data_filters(
+            response, datetime(2024, 1, 10), datetime(2024, 1, 20), 90, "3m"
+        )
+
+        assert result.total_records == 1
+        assert result.data[0].date == datetime(2024, 1, 15)
+
+
+class TestStockServiceCache:
+    """Tests for cache-related methods."""
+
+    def test_clear_cache(self):
+        """Test clearing the cache."""
+        service = StockService()
+        service.cache.set("test_key", "test_value")
+
+        service.clear_cache()
+
+        assert service.cache.get("test_key") is None
+
+    def test_cleanup_expired_cache(self):
+        """Test cleaning up expired cache entries."""
+        service = StockService()
+        # Add an entry that will expire
+        import time
+        service.cache.cache["expired_key"] = ("value", time.time() - 60)
+        service.cache.set("valid_key", "valid_value")
+
+        removed = service.cleanup_expired_cache()
+
+        assert removed == 1
+        assert service.cache.get("valid_key") == "valid_value"
+
+    def test_get_cache_stats(self):
+        """Test getting cache statistics."""
+        service = StockService()
+        service.cache.set("key1", "value1")
+        service.cache.set("key2", "value2")
+
+        stats = service.get_cache_stats()
+
+        assert stats["total_entries"] >= 2
+        assert "cache_size_mb" in stats
+
+
+class TestStockServiceDailyPicks:
+    """Tests for daily picks methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_daily_picks_both_directions(self):
+        """Test getting daily picks for both directions."""
+        service = StockService()
+
+        with patch.object(service, 'cache') as mock_cache:
+            mock_cache.get.return_value = None
+
+            with patch('app.services.stock_service.picks_service') as mock_picks:
+                mock_picks.get_picks_by_date = AsyncMock(return_value=[
+                    DailyPick(
+                        instrument="AAPL",
+                        direction=Direction.RISING,
+                        date=datetime(2024, 1, 1),
+                        score=0.85
+                    ),
+                    DailyPick(
+                        instrument="GOOGL",
+                        direction=Direction.FALLING,
+                        date=datetime(2024, 1, 1),
+                        score=0.75
+                    )
+                ])
+
+                result = await service.get_daily_picks(
+                    "2024-01-01",
+                    direction=None,
+                    user_role="admin"
+                )
+
+        assert len(result.risings) == 1
+        assert len(result.fallings) == 1
+        assert result.risings[0].instrument == "AAPL"
+        assert result.fallings[0].instrument == "GOOGL"
+
+    @pytest.mark.asyncio
+    async def test_get_daily_picks_rising_only(self):
+        """Test getting daily picks for rising direction only."""
+        service = StockService()
+
+        with patch.object(service, 'cache') as mock_cache:
+            mock_cache.get.return_value = None
+
+            with patch('app.services.stock_service.picks_service') as mock_picks:
+                mock_picks.get_picks_by_date = AsyncMock(return_value=[
+                    DailyPick(
+                        instrument="AAPL",
+                        direction=Direction.RISING,
+                        date=datetime(2024, 1, 1),
+                        score=0.85
+                    )
+                ])
+
+                result = await service.get_daily_picks(
+                    "2024-01-01",
+                    direction=Direction.RISING,
+                    user_role="admin"
+                )
+
+        assert len(result.risings) == 1
+        assert len(result.fallings) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_daily_picks_invalid_date_format(self):
+        """Test getting daily picks with invalid date format."""
+        service = StockService()
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.get_daily_picks(
+                "invalid-date",
+                direction=None,
+                user_role="admin"
+            )
+
+        assert "Invalid date format" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_daily_picks_permission_denied(self):
+        """Test getting daily picks when free user tries to access recent data."""
+        service = StockService()
+        # Use a recent date that free users shouldn't access
+        recent_date = datetime.now().strftime('%Y-%m-%d')
+
+        with pytest.raises(PermissionError):
+            await service.get_daily_picks(
+                recent_date,
+                direction=None,
+                user_role="free"
+            )
+
+
+class TestStockServiceLatestPicks:
+    """Tests for latest picks methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_latest_picks_premium(self):
+        """Test getting latest picks for premium user."""
+        service = StockService()
+
+        with patch.object(service, 'cache') as mock_cache:
+            mock_cache.get.return_value = None
+
+            with patch('app.services.stock_service.picks_service') as mock_picks:
+                mock_picks.get_latest_picks = AsyncMock(return_value=[
+                    DailyPick(
+                        instrument="AAPL",
+                        direction=Direction.RISING,
+                        date=datetime(2024, 1, 1),
+                        score=0.85
+                    )
+                ])
+
+                result = await service.get_latest_picks(
+                    user_role="premium",
+                    premium_expires_at=datetime.now(timezone.utc) + timedelta(days=30)
+                )
+
+        assert result.date == "2024-01-01"
+        assert len(result.risings) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_latest_picks_no_picks(self):
+        """Test getting latest picks when no picks available."""
+        service = StockService()
+
+        with patch.object(service, 'cache') as mock_cache:
+            mock_cache.get.return_value = None
+
+            with patch('app.services.stock_service.picks_service') as mock_picks:
+                mock_picks.get_latest_picks = AsyncMock(return_value=[])
+
+                result = await service.get_latest_picks(
+                    user_role="premium",
+                    premium_expires_at=datetime.now(timezone.utc) + timedelta(days=30)
+                )
+
+        assert result.date == ""
+        assert len(result.risings) == 0
+        assert len(result.fallings) == 0
+
+
+class TestStockServicePredictions:
+    """Tests for predictions methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_predictions_success(self):
+        """Test getting predictions successfully."""
+        service = StockService()
+
+        with patch.object(service, 'cache') as mock_cache:
+            mock_cache.get.return_value = None
+
+            with patch('app.services.stock_service.predictions_service') as mock_preds:
+                mock_preds.get_predictions_by_date = AsyncMock(return_value=[
+                    Prediction(
+                        instrument="AAPL",
+                        date=datetime(2024, 1, 1),
+                        us_rise_1d=0.75,
+                        us_rise_5d=0.80
+                    )
+                ])
+
+                result = await service.get_predictions(
+                    "2024-01-01",
+                    user_role="admin"
+                )
+
+        assert result.date == "2024-01-01"
+        assert result.total_count == 1
+
+    @pytest.mark.asyncio
+    async def test_get_predictions_invalid_date(self):
+        """Test getting predictions with invalid date."""
+        service = StockService()
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.get_predictions(
+                "invalid",
+                user_role="admin"
+            )
+
+        assert "Invalid date format" in str(exc_info.value)
+
+
+class TestStockServiceCacheInvalidation:
+    """Tests for cache invalidation methods."""
+
+    def test_invalidate_cache_for_date(self):
+        """Test invalidating cache for a specific date."""
+        service = StockService()
+        service.cache.set("daily_picks:2024-01-01:Direction.RISING", "test_data")
+        service.cache.set("predictions:2024-01-01", "test_predictions")
+
+        service.invalidate_cache_for_date("2024-01-01")
+
+        # Predictions cache entry for the date should be invalidated
+        assert service.cache.get("predictions:2024-01-01") is None
+
+    def test_invalidate_stock_cache(self):
+        """Test invalidating cache for a specific stock."""
+        service = StockService()
+        service.cache.set("stock_data:AAPL", "test_data")
+
+        service.invalidate_stock_cache("AAPL")
+
+        assert service.cache.get("stock_data:AAPL") is None

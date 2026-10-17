@@ -1,0 +1,14 @@
+{{ app_name }} - Registration Verification Code
+
+Hello!
+
+Your registration verification code is:
+
+{{ verification_code }}
+
+The verification code is valid for 10 minutes. Please do not share it with others.
+
+Please use this code to complete your registration.
+
+This email was sent automatically. Please do not reply.
+© {{ app_name }} Team

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Registration Verification Code</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #333; }
+        .content { margin-bottom: 30px; }
+        .code { background-color: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; font-size: 24px; font-weight: bold; color: #28a745; border: 2px dashed #28a745; margin: 20px 0; }
+        .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .warning { background-color: #fff3cd; padding: 15px; border-radius: 8px; color: #856404; margin: 20px 0; border: 1px solid #ffeaa7; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+        </div>
+        
+        <div class="content">
+            <h2>Registration Verification Code</h2>
+            <p>Hello!</p>
+            <p>Your registration verification code is:</p>
+            
+            <div class="code">{{ verification_code }}</div>
+            
+            <div class="warning">
+                <strong>⚠️ Important:</strong> The verification code is valid for 10 minutes. Please do not share it with others.
+            </div>
+            
+            <p>Please use this code to complete your registration.</p>
+        </div>
+        
+        <div class="footer">
+            <p>This email was sent automatically. Please do not reply.</p>
+            <p>&copy; {{ app_name }} Team</p>
+        </div>
+    </div>
+</body>
+</html>

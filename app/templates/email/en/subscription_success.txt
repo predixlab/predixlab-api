@@ -1,0 +1,33 @@
+{{ app_name }} - Welcome to Premium!
+
+Hello {{ user_name }}!
+
+Congratulations! Your subscription has been successfully activated. You now have access to all premium features.
+
+Subscription Details:
+- Billing Interval: {{ billing_interval }}
+{% if trial_end %}
+- Trial Period Ends: {{ trial_end }}
+- Next Billing Date: {{ trial_end }}
+{% else %}
+- Next Billing Date: {{ next_billing_date }}
+{% endif %}
+
+Premium Features You Can Now Enjoy:
+✓ Access signals from the latest completed daily run
+✓ View the latest available options activity
+✓ Use market overview and stock screening tools
+✓ View signal performance through the latest trading day
+
+{% if trial_end %}
+Free Trial: You're currently in your free trial period. You won't be charged until {{ trial_end }}. Cancel anytime before then if you wish.
+{% endif %}
+
+You can now examine the latest completed signals, their supporting data, and historical context.
+
+Need help? Contact our support team anytime.
+
+This email was sent automatically. Please do not reply.
+Stop optional product emails: {{ unsubscribe_url }}
+Verification, security, and billing emails will continue.
+© {{ app_name }} Team
