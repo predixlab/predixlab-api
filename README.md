@@ -164,6 +164,7 @@ Before rolling out this change, configure a new session key in every environment
 | `PREDIXLAB_DATA_DIR` | unset | Shared data root; screener snapshot is below `snapshots/us/` |
 | `PREDICTIONS_DIR` / `PICKS_DIR` | `data/...` | Compatibility fields retained in `Settings`; the service has no read point |
 | `US_STOCK_DATA_DIR` | `data/stock_data/us_data` | OHLCV CSV directory |
+| `US_REFERENCE_DATA_DIR` | derived | Optional reference/index OHLCV CSV directory; used when a symbol has no CSV in `US_STOCK_DATA_DIR` |
 | `US_INDEX_PATH` | `data/instruments/us.txt` | US instrument universe |
 | `US_CALENDAR_PATH` | `data/calendar/us.txt` | US trading calendar |
 | `STRIPE_SECRET_KEY` | empty | Stripe server secret |
@@ -173,6 +174,8 @@ Before rolling out this change, configure a new session key in every environment
 | `STRIPE_TRIAL_PERIOD_DAYS` | `30` | Trial days for a first subscription |
 
 When `PREDIXLAB_DATA_DIR` is unset, the snapshot root derives from `US_STOCK_DATA_DIR`; with defaults, the API reads `data/snapshots/us/`.
+
+Reference history (including SPY, QQQ, IWM, and DIA) uses `US_REFERENCE_DATA_DIR` when set; otherwise it uses `<PREDIXLAB_DATA_DIR>/reference_data/us_indices`. If neither variable is set, it derives the data root from `Path(US_STOCK_DATA_DIR).parents[1]`. For example, `/data/stock_data/us_data` resolves to `/data/reference_data/us_indices`, with no additional environment configuration required.
 
 ## API use
 

@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     picks_dir: str = "data/picks"
     predixlab_data_dir: Optional[str] = None
     us_stock_data_dir: str = "data/stock_data/us_data"
+    us_reference_data_dir: Optional[str] = None
     us_index_path: str = "data/instruments/us.txt"
     us_calendar_path: str = "data/calendar/us.txt"
 

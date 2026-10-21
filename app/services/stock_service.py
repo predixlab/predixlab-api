@@ -24,6 +24,15 @@ class StockService:
     def __init__(self):
         self.db = None
         self.stock_data_dir = Path(settings.us_stock_data_dir).expanduser()
+        if settings.us_reference_data_dir is not None:
+            self.reference_data_dir = Path(settings.us_reference_data_dir).expanduser()
+        else:
+            data_root = (
+                Path(settings.predixlab_data_dir).expanduser()
+                if settings.predixlab_data_dir is not None
+                else self.stock_data_dir.parents[1]
+            )
+            self.reference_data_dir = data_root / "reference_data" / "us_indices"
         self.us_index_path = Path(settings.us_index_path).expanduser()
         self.us_calendar_path = Path(settings.us_calendar_path).expanduser()
         self.cache = InMemoryCache(default_ttl_minutes=30)
@@ -393,6 +402,8 @@ class StockService:
 
         # Try US data first
         us_data_path = self.stock_data_dir / f"{symbol.upper()}.csv"
+        if not us_data_path.exists():
+            us_data_path = self.reference_data_dir / f"{symbol.upper()}.csv"
         if us_data_path.exists():
             df = self._load_data_file(us_data_path)
         else:

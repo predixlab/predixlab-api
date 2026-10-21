@@ -5,12 +5,136 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pandas as pd
 from pathlib import Path
 
+from app.config import Settings, settings
 from app.services.stock_service import StockService
 from app.models.stock import (
     Direction, DailyPick, Prediction, StockDataResponse, StockData,
     DailyPicksResponse, AvailableDatesResponse
 )
 from app.models.user import UserRole
+
+
+@pytest.fixture
+def stock_data_service(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "us_stock_data_dir", str(tmp_path / "stock_data" / "us_data"))
+    monkeypatch.setattr(settings, "predixlab_data_dir", None)
+    monkeypatch.setattr(settings, "us_reference_data_dir", None)
+    service = StockService()
+    service.stock_data_dir.mkdir(parents=True)
+    service.reference_data_dir.mkdir(parents=True)
+    return service
+
+
+class TestStockServiceReferenceData:
+    @pytest.mark.parametrize(
+        ("reference_dir", "data_root", "stock_dir", "expected"),
+        [
+            ("/custom/indices", "/shared", "/data/stock_data/us_data", "/custom/indices"),
+            (None, "/shared", "/data/stock_data/us_data", "/shared/reference_data/us_indices"),
+            (None, None, "/data/stock_data/us_data", "/data/reference_data/us_indices"),
+            (None, None, "data/stock_data/us_data", "data/reference_data/us_indices"),
+        ],
+    )
+    def test_reference_data_dir_resolution(
+        self, monkeypatch, reference_dir, data_root, stock_dir, expected
+    ):
+        for name, value in (
+            ("US_REFERENCE_DATA_DIR", reference_dir),
+            ("PREDIXLAB_DATA_DIR", data_root),
+            ("US_STOCK_DATA_DIR", stock_dir),
+        ):
+            if value is None:
+                monkeypatch.delenv(name, raising=False)
+            else:
+                monkeypatch.setenv(name, value)
+
+        with patch("app.services.stock_service.settings", Settings(_env_file=None)):
+            service = StockService()
+
+        assert service.reference_data_dir == Path(expected)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("symbol", ["SPY", "QQQ", "IWM", "DIA"])
+    async def test_reference_history_with_period_and_cache(self, stock_data_service, symbol):
+        service = stock_data_service
+        reference_path = service.reference_data_dir / f"{symbol}.csv"
+        pd.DataFrame(
+            {
+                "symbol": [symbol] * 3,
+                "date": ["2024-03-30", "2024-04-30", "2024-03-31"],
+                "open": [100.0] * 3,
+                "high": [105.0] * 3,
+                "low": [99.0] * 3,
+                "close": [104.0] * 3,
+                "volume": [1000] * 3,
+            }
+        ).to_csv(reference_path, index=False)
+        assert not (service.stock_data_dir / f"{symbol}.csv").exists()
+
+        with patch.object(service, "_load_data_file", wraps=service._load_data_file) as load:
+            result = await service.get_stock_data(symbol, period="1m")
+            full_result = await service.get_stock_data(symbol)
+            load.assert_called_once_with(reference_path)
+
+        assert result is not None
+        assert result.model_dump(mode="json") == {
+            "symbol": symbol,
+            "total_records": 2,
+            "data": [
+                {
+                    "symbol": symbol,
+                    "date": date,
+                    "open": 100.0,
+                    "high": 105.0,
+                    "low": 99.0,
+                    "close": 104.0,
+                    "volume": 1000,
+                }
+                for date in ("2024-04-30T00:00:00.000000Z", "2024-03-31T00:00:00.000000Z")
+            ],
+        }
+        assert full_result is not None
+        assert full_result.total_records == 3
+        assert [bar.date for bar in full_result.data] == [
+            datetime(2024, 4, 30), datetime(2024, 3, 31), datetime(2024, 3, 30)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_regular_ticker_prefers_stock_data_and_is_cached(self, stock_data_service):
+        service = stock_data_service
+        stock_path = service.stock_data_dir / "AAPL.csv"
+        frame = pd.DataFrame(
+            [{
+                "symbol": "AAPL",
+                "date": "2024-04-30",
+                "open": 100.0,
+                "high": 105.0,
+                "low": 99.0,
+                "close": 104.0,
+                "volume": 1000,
+                "adjclose": 103.0,
+                "dividends": 0.0,
+                "splits": 0.0,
+            }]
+        )
+        frame.to_csv(stock_path, index=False)
+        frame["close"] = 999.0
+        frame.to_csv(service.reference_data_dir / "AAPL.csv", index=False)
+
+        with patch.object(service, "_load_data_file", wraps=service._load_data_file) as load:
+            result = await service.get_stock_data("AAPL")
+            cached_result = await service.get_stock_data("AAPL")
+            load.assert_called_once_with(stock_path)
+
+        assert result is not None
+        assert result.symbol == "AAPL"
+        assert result.total_records == 1
+        assert result.data[0].close == 104.0
+        assert cached_result is result
+
+    @pytest.mark.asyncio
+    async def test_missing_symbol_returns_none(self, stock_data_service):
+        assert await stock_data_service.get_stock_data("MISSING") is None
 
 
 class TestStockServicePeriodValidation:
