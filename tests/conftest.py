@@ -190,6 +190,7 @@ def mock_db():
     mock.referrals = MagicMock()
     mock.referral_clicks = MagicMock()
     mock.verification_codes = MagicMock()
+    mock.rate_limits = MagicMock()
     mock.oauth_tokens = MagicMock()
     mock.login_codes = MagicMock()
     mock.user_sessions = MagicMock()
@@ -202,3 +203,108 @@ def mock_db():
     mock.pivot_runs = MagicMock()
     mock.options_anomalies = MagicMock()
     return mock
+
+
+@pytest.fixture
+def mongo_auth_db(mock_db):
+    """Stateful AsyncMock collections for atomic authentication operations."""
+    from copy import deepcopy
+    from bson import ObjectId
+    from pymongo import ReturnDocument
+    from pymongo.errors import DuplicateKeyError
+
+    def matches(document, query):
+        for key, expected in query.items():
+            if key == "$or":
+                if not any(matches(document, clause) for clause in expected):
+                    return False
+            elif isinstance(expected, dict):
+                for operator, value in expected.items():
+                    actual = document.get(key)
+                    if operator == "$exists":
+                        matched = (key in document) == value
+                    elif operator == "$gt":
+                        matched = actual is not None and actual > value
+                    elif operator == "$lt":
+                        matched = actual is not None and actual < value
+                    elif operator == "$lte":
+                        matched = actual is not None and actual <= value
+                    else:
+                        raise AssertionError(f"Unsupported operator: {operator}")
+                    if not matched:
+                        return False
+            elif document.get(key) != expected:
+                return False
+        return True
+
+    def configure(collection):
+        documents = {}
+        collection.documents = documents
+
+        async def find_one(query):
+            return deepcopy(next(
+                (doc for doc in documents.values() if matches(doc, query)), None
+            ))
+
+        async def insert_one(document):
+            document = deepcopy(document)
+            document.setdefault("_id", ObjectId())
+            if document["_id"] in documents:
+                raise DuplicateKeyError("Duplicate _id", code=11000)
+            documents[document["_id"]] = document
+            return MagicMock(inserted_id=document["_id"])
+
+        async def find_one_and_update(
+            query, update, *, upsert=False, return_document=ReturnDocument.BEFORE
+        ):
+            document = next(
+                (doc for doc in documents.values() if matches(doc, query)), None
+            )
+            previous = deepcopy(document)
+            if document is None:
+                if not upsert:
+                    return None
+                document = {
+                    key: value for key, value in query.items()
+                    if not key.startswith("$") and not isinstance(value, dict)
+                }
+                document.update(update.get("$setOnInsert", {}))
+                result = await insert_one(document)
+                document = documents[result.inserted_id]
+            document.update(deepcopy(update.get("$set", {})))
+            for field, value in update.get("$inc", {}).items():
+                document[field] = document.get(field, 0) + value
+            return deepcopy(document) if return_document else previous
+
+        async def update_one(query, update):
+            document = await find_one_and_update(
+                query, update, return_document=ReturnDocument.AFTER
+            )
+            return MagicMock(matched_count=int(document is not None))
+
+        async def delete_one(query):
+            document = await find_one(query)
+            if document is not None:
+                del documents[document["_id"]]
+            return MagicMock(deleted_count=int(document is not None))
+
+        async def delete_many(query):
+            identifiers = [
+                key for key, document in documents.items()
+                if matches(document, query)
+            ]
+            for key in identifiers:
+                del documents[key]
+            return MagicMock(deleted_count=len(identifiers))
+
+        collection.find_one = AsyncMock(side_effect=find_one)
+        collection.insert_one = AsyncMock(side_effect=insert_one)
+        collection.find_one_and_update = AsyncMock(side_effect=find_one_and_update)
+        collection.update_one = AsyncMock(side_effect=update_one)
+        collection.delete_one = AsyncMock(side_effect=delete_one)
+        collection.delete_many = AsyncMock(side_effect=delete_many)
+
+    configure(mock_db.verification_codes)
+    configure(mock_db.rate_limits)
+    mock_db.users.update_one = AsyncMock()
+    return mock_db

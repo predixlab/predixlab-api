@@ -14,6 +14,7 @@ from app.models.user import (
 from app.services.user_service import user_service
 from app.core.security import create_access_token, verify_refresh_token
 from app.core.dependencies import get_current_user, get_user_agent, get_client_ip
+from app.core.rate_limits import enforce_code_rate_limit
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -57,24 +58,21 @@ async def request_registration_code(
 ):
     """Request email verification code for registration"""
     try:
+        await enforce_code_rate_limit(
+            request_data.email, client_ip, action="request"
+        )
         # Check if user already exists
         existing_user = await user_service.get_user_by_email(request_data.email)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists"
-            )
+        if not existing_user:
+            success = await user_service.send_verification_code(request_data.email, for_registration=True, language=request_data.preferred_language)
 
-        # Send verification code for registration
-        success = await user_service.send_verification_code(request_data.email, for_registration=True, language=request_data.preferred_language)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to send verification code"
+                )
 
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send verification code"
-            )
-
-        logger.info(f"Registration verification code sent to {request_data.email} from {client_ip}")
+            logger.info(f"Registration verification code sent to {request_data.email} from {client_ip}")
 
         return {
             "message": "Verification code sent to email",
@@ -99,6 +97,9 @@ async def register_user(
 ):
     """Register a new user with email verification"""
     try:
+        await enforce_code_rate_limit(
+            register_data.email, client_ip, action="verify"
+        )
         # Register user (verification happens inside this method)
         user = await user_service.register_user(register_data)
 
@@ -151,24 +152,21 @@ async def request_login_code(
 ):
     """Request email verification code for login"""
     try:
+        await enforce_code_rate_limit(
+            request_data.email, client_ip, action="request"
+        )
         # Check if user exists
         user = await user_service.get_user_by_email(request_data.email)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User with this email does not exist"
-            )
+        if user:
+            success = await user_service.send_verification_code(request_data.email, for_registration=False, language=user.preferred_language)
 
-        # Send verification code for login
-        success = await user_service.send_verification_code(request_data.email, for_registration=False, language=user.preferred_language)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to send verification code"
+                )
 
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send verification code"
-            )
-
-        logger.info(f"Login verification code sent to {request_data.email} from {client_ip}")
+            logger.info(f"Login verification code sent to {request_data.email} from {client_ip}")
 
         return {
             "message": "Verification code sent to email",
@@ -193,6 +191,9 @@ async def login_user(
 ):
     """Login user with email verification code"""
     try:
+        await enforce_code_rate_limit(
+            verify_data.email, client_ip, action="verify"
+        )
         # Verify the code
         is_valid = await user_service.verify_email_code(verify_data.email, verify_data.code)
 
@@ -204,16 +205,10 @@ async def login_user(
 
         # Get user (must exist for login)
         user = await user_service.get_user_by_email(verify_data.email)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-
-        if not user.is_active:
+        if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User account is inactive"
+                detail="Invalid or expired verification code"
             )
 
         # Update last login

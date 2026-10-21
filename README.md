@@ -160,6 +160,35 @@ The API refuses to start if `SESSION_SECRET_KEY` is missing, blank, or shorter t
 
 Before rolling out this change, configure a new session key in every environment. Replacing the session key invalidates all existing session cookies, including cookies signed with the retired hardcoded key. Complete the rollout across all replicas; in-progress OAuth sign-ins must restart. There is no fallback to the old key.
 
+### Email verification-code protection
+
+Six-digit email codes expire after 10 minutes, become unusable after five failed
+attempts, and are consumed atomically on success. A replacement code resets the
+failure count. Login and registration share MongoDB-backed fixed-window counters
+in `rate_limits`, with an `expires_at` TTL index created at startup.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OTP_REQUEST_EMAIL_LIMIT` / `OTP_REQUEST_IP_LIMIT` | `5` / `20` | Code requests per email / client IP per window |
+| `OTP_REQUEST_WINDOW_SECONDS` | `3600` | Code-request window duration |
+| `OTP_VERIFY_EMAIL_LIMIT` / `OTP_VERIFY_IP_LIMIT` | `10` / `30` | Verification requests per email / client IP per window |
+| `OTP_VERIFY_WINDOW_SECONDS` | `900` | Verification window duration |
+| `OTP_RESEND_COOLDOWN_SECONDS` | `60` | Minimum delay between code requests for the same email |
+| `TRUSTED_PROXY_HOPS` | `1` | Select the client address this many hops from the right of `X-Forwarded-For`; `0` disables this header |
+| `TRUST_X_REAL_IP` | `False` | Explicitly allow `X-Real-IP` as a fallback before the socket address |
+
+All limits and durations must be positive. Requests, including rejected attempts,
+count against both dimensions; email keys are case-insensitive. Throttled requests
+return a generic HTTP 429 response with `Retry-After` in seconds. Code-request
+responses do not disclose whether an account exists, and cooldowns also apply to
+ineligible addresses. Database errors fail closed rather than bypassing limits.
+
+The default proxy setting matches Azure Container Apps ingress, which appends the
+real client IP on the right. Only trust forwarded headers when every request
+passes through ingress that supplies those hops; use `TRUSTED_PROXY_HOPS=0` for
+direct access. Invalid or incomplete proxy chains fall back to the socket address
+(or a valid `X-Real-IP` when explicitly enabled).
+
 ### Files and external services
 
 | Variable | Default | Purpose |

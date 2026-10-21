@@ -16,6 +16,19 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
+    # Email verification-code throttling (shared through MongoDB)
+    otp_request_email_limit: int = Field(default=5, ge=1)
+    otp_request_ip_limit: int = Field(default=20, ge=1)
+    otp_request_window_seconds: int = Field(default=3600, ge=1)
+    otp_verify_email_limit: int = Field(default=10, ge=1)
+    otp_verify_ip_limit: int = Field(default=30, ge=1)
+    otp_verify_window_seconds: int = Field(default=900, ge=1)
+    otp_resend_cooldown_seconds: int = Field(default=60, ge=1)
+
+    # Set to zero when requests do not pass through a trusted ingress.
+    trusted_proxy_hops: int = Field(default=1, ge=0)
+    trust_x_real_ip: bool = False
+
     # OAuth session signing
     session_secret_key: SecretStr = Field(
         default=SecretStr(""), min_length=32, validate_default=True

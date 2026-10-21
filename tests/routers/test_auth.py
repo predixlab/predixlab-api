@@ -13,6 +13,11 @@ from app.models.user import (
     EmailLoginVerify, UserRegister, RefreshTokenRequest, Language
 )
 
+@pytest.fixture(autouse=True)
+def mock_code_rate_limit():
+    with patch("app.routers.auth.enforce_code_rate_limit", new_callable=AsyncMock) as limiter:
+        yield limiter
+
 
 class TestRequestRegistrationCode:
     """Tests for request_registration_code endpoint."""
@@ -51,16 +56,18 @@ class TestRequestRegistrationCode:
             mock_service.get_user_by_email = AsyncMock(return_value=MagicMock())
 
             mock_request = MagicMock()
-            with pytest.raises(HTTPException) as exc_info:
-                await request_registration_code(
-                    request_data,
-                    mock_request,
-                    user_agent="Mozilla/5.0",
-                    client_ip="127.0.0.1"
-                )
+            result = await request_registration_code(
+                request_data,
+                mock_request,
+                user_agent="Mozilla/5.0",
+                client_ip="127.0.0.1"
+            )
 
-            assert exc_info.value.status_code == 400
-            assert "already exists" in exc_info.value.detail
+            assert result == {
+                "message": "Verification code sent to email",
+                "email": request_data.email,
+            }
+            mock_service.send_verification_code.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_request_registration_code_send_failure(self):
@@ -116,15 +123,18 @@ class TestRequestLoginCode:
             mock_service.get_user_by_email = AsyncMock(return_value=None)
 
             mock_request = MagicMock()
-            with pytest.raises(HTTPException) as exc_info:
-                await request_login_code(
-                    request_data,
-                    mock_request,
-                    user_agent="Mozilla/5.0",
-                    client_ip="127.0.0.1"
-                )
+            result = await request_login_code(
+                request_data,
+                mock_request,
+                user_agent="Mozilla/5.0",
+                client_ip="127.0.0.1"
+            )
 
-            assert exc_info.value.status_code == 404
+            assert result == {
+                "message": "Verification code sent to email",
+                "email": request_data.email,
+            }
+            mock_service.send_verification_code.assert_not_called()
 
 
 class TestLoginUser:
@@ -206,7 +216,7 @@ class TestLoginUser:
                 )
 
             assert exc_info.value.status_code == 400
-            assert "inactive" in exc_info.value.detail
+            assert exc_info.value.detail == "Invalid or expired verification code"
 
 
 class TestRefreshToken:

@@ -83,6 +83,7 @@ async def create_indexes():
         ),
         ("verification_codes", "email", {}),
         ("verification_codes", "expires_at", {"expireAfterSeconds": 0}),
+        ("rate_limits", "expires_at", {"expireAfterSeconds": 0}),
         ("user_sessions", "user_id", {}),
         ("user_sessions", "expires_at", {"expireAfterSeconds": 0}),
         ("predictions", [("date", 1), ("market", 1)], {}),

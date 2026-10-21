@@ -88,3 +88,18 @@ async def test_create_index_accepts_equivalent_existing_index():
         )
 
     assert result is True
+
+
+@pytest.mark.asyncio
+async def test_authentication_ttl_indexes():
+    fake_database = FakeDatabase()
+    with patch.object(database.mongodb, "database", fake_database):
+        await database.create_indexes()
+
+    fake_database["rate_limits"].create_index.assert_awaited_once_with(
+        "expires_at", expireAfterSeconds=0
+    )
+    fake_database["verification_codes"].create_index.assert_any_await("email")
+    fake_database["verification_codes"].create_index.assert_any_await(
+        "expires_at", expireAfterSeconds=0
+    )
