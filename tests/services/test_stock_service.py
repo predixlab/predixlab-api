@@ -19,10 +19,44 @@ def stock_data_service(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "us_stock_data_dir", str(tmp_path / "stock_data" / "us_data"))
     monkeypatch.setattr(settings, "predixlab_data_dir", None)
     monkeypatch.setattr(settings, "us_reference_data_dir", None)
+    monkeypatch.setattr(
+        settings, "us_reference_symbols", Settings.model_fields["us_reference_symbols"].default
+    )
     service = StockService()
     service.stock_data_dir.mkdir(parents=True)
     service.reference_data_dir.mkdir(parents=True)
     return service
+
+
+class TestReferenceSymbolSettings:
+    def test_default_reference_symbols(self, monkeypatch):
+        monkeypatch.delenv("US_REFERENCE_SYMBOLS", raising=False)
+        configured = Settings(_env_file=None)
+
+        assert configured.us_reference_symbols == "SPY,QQQ,IWM,DIA"
+        for symbol in ("SPY", "QQQ", "IWM", "DIA"):
+            assert configured.is_index_symbol(symbol)
+            assert configured.is_index_symbol(symbol.lower())
+        assert not configured.is_index_symbol("^GSPC")
+        assert not configured.is_index_symbol("AAPL")
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("VTI,XLK", {"VTI", "XLK"}),
+            ("  vTi , xLk  ", {"VTI", "XLK"}),
+            (", vti, , XLK,,vTi, ", {"VTI", "XLK"}),
+            ("", set()),
+            (" , ,  ", set()),
+        ],
+    )
+    def test_custom_reference_symbols(self, monkeypatch, value, expected):
+        monkeypatch.setenv("US_REFERENCE_SYMBOLS", value)
+        configured = Settings(_env_file=None)
+
+        for symbol in ("VTI", "XLK", "SPY", "^GSPC", ""):
+            assert configured.is_index_symbol(symbol) == (symbol in expected)
+            assert configured.is_index_symbol(symbol.lower()) == (symbol in expected)
 
 
 class TestStockServiceReferenceData:
@@ -54,11 +88,14 @@ class TestStockServiceReferenceData:
         assert service.reference_data_dir == Path(expected)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("stock_file_exists", [False, True])
     @pytest.mark.parametrize("symbol", ["SPY", "QQQ", "IWM", "DIA"])
-    async def test_reference_history_with_period_and_cache(self, stock_data_service, symbol):
+    async def test_reference_history_with_period_and_cache(
+        self, stock_data_service, symbol, stock_file_exists
+    ):
         service = stock_data_service
         reference_path = service.reference_data_dir / f"{symbol}.csv"
-        pd.DataFrame(
+        frame = pd.DataFrame(
             {
                 "symbol": [symbol] * 3,
                 "date": ["2024-03-30", "2024-04-30", "2024-03-31"],
@@ -68,12 +105,16 @@ class TestStockServiceReferenceData:
                 "close": [104.0] * 3,
                 "volume": [1000] * 3,
             }
-        ).to_csv(reference_path, index=False)
-        assert not (service.stock_data_dir / f"{symbol}.csv").exists()
+        )
+        frame.to_csv(reference_path, index=False)
+        if stock_file_exists:
+            frame["close"] = 999.0
+            frame.to_csv(service.stock_data_dir / f"{symbol}.csv", index=False)
 
         with patch.object(service, "_load_data_file", wraps=service._load_data_file) as load:
-            result = await service.get_stock_data(symbol, period="1m")
+            result = await service.get_stock_data(symbol.lower(), period="1m")
             full_result = await service.get_stock_data(symbol)
+            assert await service.get_stock_data(symbol.lower()) is full_result
             load.assert_called_once_with(reference_path)
 
         assert result is not None
@@ -100,12 +141,15 @@ class TestStockServiceReferenceData:
         ]
 
     @pytest.mark.asyncio
-    async def test_regular_ticker_prefers_stock_data_and_is_cached(self, stock_data_service):
+    @pytest.mark.parametrize("symbol", ["AAPL", "^GSPC"])
+    async def test_regular_ticker_reads_only_stock_data_and_is_cached(
+        self, stock_data_service, symbol
+    ):
         service = stock_data_service
-        stock_path = service.stock_data_dir / "AAPL.csv"
+        stock_path = service.stock_data_dir / f"{symbol}.csv"
         frame = pd.DataFrame(
             [{
-                "symbol": "AAPL",
+                "symbol": symbol,
                 "date": "2024-04-30",
                 "open": 100.0,
                 "high": 105.0,
@@ -119,18 +163,84 @@ class TestStockServiceReferenceData:
         )
         frame.to_csv(stock_path, index=False)
         frame["close"] = 999.0
-        frame.to_csv(service.reference_data_dir / "AAPL.csv", index=False)
+        frame.to_csv(service.reference_data_dir / f"{symbol}.csv", index=False)
 
         with patch.object(service, "_load_data_file", wraps=service._load_data_file) as load:
-            result = await service.get_stock_data("AAPL")
-            cached_result = await service.get_stock_data("AAPL")
+            result = await service.get_stock_data(symbol.lower())
+            cached_result = await service.get_stock_data(symbol)
+            load.assert_called_once_with(stock_path)
+
+        assert result is not None
+        assert result.symbol == symbol
+        assert result.data[0].symbol == symbol
+        assert result.total_records == 1
+        assert result.data[0].close == 104.0
+        assert cached_result is result
+
+    @pytest.mark.asyncio
+    async def test_custom_reference_symbols_control_routing(self, stock_data_service, monkeypatch):
+        monkeypatch.setattr(settings, "us_reference_symbols", " , vTi, , ")
+        service = stock_data_service
+        for symbol in ("VTI", "SPY"):
+            for directory, close in (
+                (service.stock_data_dir, 101),
+                (service.reference_data_dir, 104),
+            ):
+                (directory / f"{symbol}.csv").write_text(
+                    "symbol,date,open,high,low,close,volume\n"
+                    f"{symbol},2024-04-30,100,105,99,{close},1000\n"
+                )
+
+        reference_result = await service.get_stock_data("vTi")
+        regular_result = await service.get_stock_data("sPy")
+
+        assert reference_result is not None
+        assert reference_result.symbol == "VTI"
+        assert reference_result.data[0].close == 104
+        assert regular_result is not None
+        assert regular_result.symbol == "SPY"
+        assert regular_result.data[0].close == 101
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("symbol", "wrong_dir"),
+        [
+            ("SPY", "stock_data_dir"),
+            ("AAPL", "reference_data_dir"),
+            ("^GSPC", "reference_data_dir"),
+        ],
+    )
+    async def test_no_cross_directory_fallback(self, stock_data_service, symbol, wrong_dir):
+        wrong_path = getattr(stock_data_service, wrong_dir) / f"{symbol}.csv"
+        wrong_path.write_text(
+            "symbol,date,open,high,low,close,volume\n"
+            f"{symbol},2024-04-30,100,105,99,104,1000\n"
+        )
+
+        with patch.object(stock_data_service, "_load_data_file") as load:
+            assert await stock_data_service.get_stock_data(symbol.lower()) is None
+            assert await stock_data_service.get_stock_data(symbol) is None
+            load.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_index_does_not_affect_regular_symbol_cache(self, stock_data_service):
+        service = stock_data_service
+        stock_path = service.stock_data_dir / "AAPL.csv"
+        stock_path.write_text(
+            "symbol,date,open,high,low,close,volume\n"
+            "AAPL,2024-04-30,100,105,99,104,1000\n"
+        )
+
+        with patch.object(service, "_load_data_file", wraps=service._load_data_file) as load:
+            assert await service.get_stock_data("spy") is None
+            result = await service.get_stock_data("aapl")
+            assert await service.get_stock_data("SPY") is None
+            assert await service.get_stock_data("AAPL") is result
             load.assert_called_once_with(stock_path)
 
         assert result is not None
         assert result.symbol == "AAPL"
-        assert result.total_records == 1
         assert result.data[0].close == 104.0
-        assert cached_result is result
 
     @pytest.mark.asyncio
     async def test_missing_symbol_returns_none(self, stock_data_service):

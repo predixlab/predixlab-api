@@ -364,6 +364,8 @@ class StockService:
         Returns:
             StockDataResponse with filtered data based on parameters
         """
+        symbol = symbol.upper()
+
         # Validate and parse date parameters
         start_datetime = None
         end_datetime = None
@@ -400,12 +402,10 @@ class StockService:
             logger.debug(f"Retrieved stock data from cache: {symbol}")
             return self._apply_data_filters(cached_result, start_datetime, end_datetime, period_days, period)
 
-        # Try US data first
-        us_data_path = self.stock_data_dir / f"{symbol.upper()}.csv"
-        if not us_data_path.exists():
-            us_data_path = self.reference_data_dir / f"{symbol.upper()}.csv"
-        if us_data_path.exists():
-            df = self._load_data_file(us_data_path)
+        data_dir = self.reference_data_dir if settings.is_index_symbol(symbol) else self.stock_data_dir
+        data_path = data_dir / f"{symbol}.csv"
+        if data_path.exists():
+            df = self._load_data_file(data_path)
         else:
             self.cache.set(cache_key, None)
             return None
