@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     otp_verify_window_seconds: int = Field(default=900, ge=1)
     otp_resend_cooldown_seconds: int = Field(default=60, ge=1)
 
+    oauth_exchange_ip_limit: int = Field(default=20, ge=1)
+    oauth_exchange_window_seconds: int = Field(default=300, ge=1)
+    refresh_ip_limit: int = Field(default=60, ge=1)
+    refresh_window_seconds: int = Field(default=300, ge=1)
+
     # Set to zero when requests do not pass through a trusted ingress.
     trusted_proxy_hops: int = Field(default=1, ge=0)
     trust_x_real_ip: bool = False

@@ -24,6 +24,10 @@ def limiter(mongo_auth_db, monkeypatch):
         "otp_verify_ip_limit": 30,
         "otp_verify_window_seconds": 900,
         "otp_resend_cooldown_seconds": 60,
+        "oauth_exchange_ip_limit": 20,
+        "oauth_exchange_window_seconds": 300,
+        "refresh_ip_limit": 60,
+        "refresh_window_seconds": 300,
     }
     for key, value in defaults.items():
         monkeypatch.setattr(settings, key, value)
@@ -142,7 +146,8 @@ async def test_counters_use_atomic_upsert_and_expiry(limiter, mongo_auth_db):
     )
     for call in mongo_auth_db.rate_limits.find_one_and_update.call_args_list:
         query, update = call.args
-        assert set(query) == {"_id"}
+        assert query["expires_at"] == {"$gt": limiter.now.return_value}
+        assert set(query) == {"_id", "expires_at"}
         assert update == {
             "$inc": {"count": 1},
             "$setOnInsert": {"expires_at": limiter.now.return_value + timedelta(seconds=900)},
@@ -208,6 +213,8 @@ async def test_database_failure_is_not_a_successful_fallback(limiter, mongo_auth
         "otp_request_email_limit", "otp_request_ip_limit", "otp_request_window_seconds",
         "otp_verify_email_limit", "otp_verify_ip_limit", "otp_verify_window_seconds",
         "otp_resend_cooldown_seconds",
+        "oauth_exchange_ip_limit", "oauth_exchange_window_seconds",
+        "refresh_ip_limit", "refresh_window_seconds",
     ],
 )
 def test_limits_must_be_positive(field):
@@ -218,3 +225,25 @@ def test_limits_must_be_positive(field):
 def test_proxy_hops_cannot_be_negative():
     with pytest.raises(ValidationError):
         Settings(trusted_proxy_hops=-1)
+
+
+async def test_ip_counters_are_separate_from_otp_and_each_other(limiter, mongo_auth_db):
+    await rate_limits.enforce_code_rate_limit("test@example.com", "192.0.2.1", action="verify")
+    await rate_limits.enforce_ip_rate_limit("192.0.2.1", action="oauth_exchange")
+    await rate_limits.enforce_ip_rate_limit("192.0.2.1", action="refresh")
+    keys = list(mongo_auth_db.rate_limits.documents)
+    assert len(keys) == 4
+    assert any(key.startswith("auth:oauth_exchange:ip:") for key in keys)
+    assert any(key.startswith("auth:refresh:ip:") for key in keys)
+    assert all("192.0.2.1" not in key for key in keys)
+
+
+async def test_ip_counter_upsert_race_is_retried(limiter, mongo_auth_db):
+    update = mongo_auth_db.rate_limits.find_one_and_update.side_effect
+    mongo_auth_db.rate_limits.find_one_and_update.side_effect = [
+        DuplicateKeyError("Concurrent insert", code=11000),
+        {"count": 1},
+    ]
+    await rate_limits.enforce_ip_rate_limit("192.0.2.1", action="refresh")
+    assert mongo_auth_db.rate_limits.find_one_and_update.await_count == 2
+    mongo_auth_db.rate_limits.find_one_and_update.side_effect = update

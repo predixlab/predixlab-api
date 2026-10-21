@@ -14,7 +14,7 @@ from app.models.user import (
 from app.services.user_service import user_service
 from app.core.security import create_access_token, verify_refresh_token
 from app.core.dependencies import get_current_user, get_user_agent, get_client_ip
-from app.core.rate_limits import enforce_code_rate_limit
+from app.core.rate_limits import enforce_code_rate_limit, enforce_ip_rate_limit
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -447,6 +447,7 @@ async def exchange_oauth_code(
 ):
     """Exchange a short-lived OAuth login code for access/refresh tokens."""
     try:
+        await enforce_ip_rate_limit(client_ip, action="oauth_exchange")
         consumed = await user_service.consume_login_code(payload.code)
         if not consumed:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
@@ -576,6 +577,7 @@ async def refresh_access_token(
 ):
     """Refresh access token using refresh token"""
     try:
+        await enforce_ip_rate_limit(client_ip, action="refresh")
         # Get refresh token from database
         refresh_token = await user_service.get_refresh_token(refresh_request.refresh_token)
 

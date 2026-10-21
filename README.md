@@ -148,7 +148,7 @@ Production mode disables all three endpoints by default. Every response includes
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APP_NAME` / `APP_VERSION` | `PredixLab` / `1.0.0` | Application information in OpenAPI and status responses |
-| `DEBUG` | `False` | Debug logging, reload for direct `app.main` execution, and API docs when `ENABLE_API_DOCS` is unset |
+| `DEBUG` | `False` | Debug logging and reload for `start.py` / direct `app.main` execution, and API docs when `ENABLE_API_DOCS` is unset |
 | `ENABLE_API_DOCS` | unset | Overrides `DEBUG` for `/openapi.json`, `/docs`, and `/redoc`; accepts `True` or `False` |
 | `CORS_ORIGINS` | local `3000`, `8080` | Allowed origins as a JSON array |
 | `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links |
@@ -187,6 +187,8 @@ in `rate_limits`, with an `expires_at` TTL index created at startup.
 | `OTP_VERIFY_EMAIL_LIMIT` / `OTP_VERIFY_IP_LIMIT` | `10` / `30` | Verification requests per email / client IP per window |
 | `OTP_VERIFY_WINDOW_SECONDS` | `900` | Verification window duration |
 | `OTP_RESEND_COOLDOWN_SECONDS` | `60` | Minimum delay between code requests for the same email |
+| `OAUTH_EXCHANGE_IP_LIMIT` / `OAUTH_EXCHANGE_WINDOW_SECONDS` | `20` / `300` | OAuth code exchanges per client IP / fixed-window duration |
+| `REFRESH_IP_LIMIT` / `REFRESH_WINDOW_SECONDS` | `60` / `300` | Token refreshes per client IP / fixed-window duration |
 | `TRUSTED_PROXY_HOPS` | `1` | Select the client address this many hops from the right of `X-Forwarded-For`; `0` disables this header |
 | `TRUST_X_REAL_IP` | `False` | Explicitly allow `X-Real-IP` as a fallback before the socket address |
 
@@ -201,6 +203,10 @@ real client IP on the right. Only trust forwarded headers when every request
 passes through ingress that supplies those hops; use `TRUSTED_PROXY_HOPS=0` for
 direct access. Invalid or incomplete proxy chains fall back to the socket address
 (or a valid `X-Real-IP` when explicitly enabled).
+
+OAuth code exchange and token refresh use separate MongoDB-backed per-IP
+fixed-window limits before any token processing. Rejected attempts count, and
+HTTP 429 responses include `Retry-After`.
 
 ### Files and external services
 

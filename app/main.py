@@ -199,6 +199,7 @@ async def add_robots_header(
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
+        headers=exc.headers,
         content={
             "error": True,
             "message": exc.detail,
@@ -276,7 +277,7 @@ async def api_info():
         "features": [
             "Email verification login",
             "OAuth login (Google, Microsoft)",
-            "Daily stock recommendations",
+            "Daily signals",
             "Stock prediction results",
             "Historical stock data",
             "Backtest analysis",
