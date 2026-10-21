@@ -603,13 +603,13 @@ def aggregate_signal_score(signals: List[TechnicalSignal]) -> float:
 def classify_signal(score: float) -> SignalStrength:
     """Bucket the aggregate score into a coarse stance."""
     if score >= 0.6:
-        return SignalStrength.STRONG_BUY
+        return SignalStrength.STRONGLY_BULLISH
     if score >= 0.2:
-        return SignalStrength.BUY
+        return SignalStrength.BULLISH
     if score <= -0.6:
-        return SignalStrength.STRONG_SELL
+        return SignalStrength.STRONGLY_BEARISH
     if score <= -0.2:
-        return SignalStrength.SELL
+        return SignalStrength.BEARISH
     return SignalStrength.NEUTRAL
 
 
@@ -635,11 +635,11 @@ _TREND_TEXT = {
 }
 
 _SIGNAL_TEXT = {
-    SignalStrength.STRONG_BUY: "The technical picture is strongly constructive",
-    SignalStrength.BUY: "The technical picture leans constructive",
+    SignalStrength.STRONGLY_BULLISH: "The technical picture is strongly bullish",
+    SignalStrength.BULLISH: "The technical picture leans bullish",
     SignalStrength.NEUTRAL: "The technical picture is mixed",
-    SignalStrength.SELL: "The technical picture leans negative",
-    SignalStrength.STRONG_SELL: "The technical picture is strongly negative",
+    SignalStrength.BEARISH: "The technical picture leans bearish",
+    SignalStrength.STRONGLY_BEARISH: "The technical picture is strongly bearish",
 }
 
 

@@ -37,7 +37,7 @@ def _technical() -> TechnicalAnalysisResponse:
         date="2024-06-28",
         quote=quote,
         trend=TrendDirection.UPTREND,
-        signal=SignalStrength.BUY,
+        signal=SignalStrength.BULLISH,
         signal_score=0.4,
         narrative="looks fine",
     )
@@ -50,7 +50,8 @@ class TestTechnicalEndpoint:
             service.get_technical_analysis = AsyncMock(return_value=_technical())
             result = await get_technical_analysis("aapl", current_user=mock_user)
             service.get_technical_analysis.assert_awaited_once_with("AAPL")
-        assert result.signal == SignalStrength.BUY
+        assert result.signal == SignalStrength.BULLISH
+        assert result.model_dump(mode="json")["signal"] == "bullish"
 
     @pytest.mark.asyncio
     async def test_missing_symbol_is_404(self, mock_user):

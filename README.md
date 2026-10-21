@@ -121,6 +121,22 @@ When `ENABLE_API_DOCS=True` (or unset with `DEBUG=True`):
 Production mode disables all three endpoints by default. Every response includes
 `X-Robots-Tag: noindex, nofollow`, and `/robots.txt` disallows crawling the entire API.
 
+### Directional signal labels
+
+Pivot `action` responses use `STRONGLY_BULLISH`, `BULLISH`, `NEUTRAL`,
+`BEARISH`, and `STRONGLY_BEARISH`. Technical analysis `signal` responses use
+the lowercase equivalents. Legacy Pivot states (`STRONG_BUY`, `BUY`, `HOLD`,
+`SELL`, `STRONG_SELL`) still published to MongoDB by the Signals pipeline are
+normalized when parsed, including pick details, summaries, histories, and the
+combined Signals board. Legacy technical-analysis values are also accepted on
+model input; responses and OpenAPI enums always use the new directional labels.
+
+There are no action-value query parameters or MongoDB action filters in the
+API. Existing `direction` (`long`/`short`) and `event` (`BUY_TURN`, `SELL_TURN`,
+`TREND_BUY`, `BASE_BREAKOUT`) filters are unchanged and select documents with
+either legacy or new actions. Clients displaying action labels must recognize
+the new response values; no stored-data migration is required.
+
 ## Configuration
 
 `Settings` in `app/config.py` reads environment variables or the repository-root `.env`. See the complete copyable template in [`.env.example`](.env.example).

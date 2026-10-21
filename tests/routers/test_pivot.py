@@ -109,6 +109,9 @@ class TestGetLatestPivotPicks:
         assert result.total_count == 2
         assert [p.symbol for p in result.longs] == ["AAPL"]
         assert [p.symbol for p in result.shorts] == ["OGN"]
+        payload = result.model_dump(mode="json")
+        assert payload["longs"][0]["action"] == "STRONGLY_BULLISH"
+        assert payload["shorts"][0]["action"] == "STRONGLY_BEARISH"
 
     @pytest.mark.asyncio
     async def test_direction_filter_is_forwarded(self, mock_premium_user):

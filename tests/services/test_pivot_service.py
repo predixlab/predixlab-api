@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 from app.config import settings
-from app.models.pivot import PickEvent, PivotPick, pick_from_document
+from app.models.pivot import PickEvent, PivotAction, PivotPick, pick_from_document
 from app.services.pivot_service import PUBLIC_PICK_EVENTS, PivotService
 
 
@@ -91,6 +91,30 @@ def _service(collection) -> PivotService:
 
 
 class TestPickFromDocument:
+    @pytest.mark.parametrize("legacy,new", [
+        ("STRONG_BUY", "STRONGLY_BULLISH"),
+        ("BUY", "BULLISH"),
+        ("HOLD", "NEUTRAL"),
+        ("SELL", "BEARISH"),
+        ("STRONG_SELL", "STRONGLY_BEARISH"),
+    ])
+    def test_legacy_and_new_states_emit_only_directional_labels(self, legacy, new):
+        for stored in (legacy, new):
+            pick = pick_from_document(_document(action=stored))
+            assert pick.action == PivotAction(new)
+            assert pick.model_dump(mode="json")["action"] == new
+
+    def test_schema_lists_only_new_labels(self):
+        assert PivotPick.model_json_schema()["$defs"]["PivotAction"]["enum"] == [
+            "STRONGLY_BULLISH", "BULLISH", "NEUTRAL", "BEARISH", "STRONGLY_BEARISH"
+        ]
+
+    def test_unknown_action_is_not_silently_normalized(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            pick_from_document(_document(action="unknown"))
+
     def test_public_events_only_include_trade_signals(self):
         assert {event.value for event in PickEvent} == {
             "BUY_TURN",
@@ -197,6 +221,39 @@ class TestGetPicksByDate:
         picks = await service.get_picks_by_date("2024-01-02", market="us")
 
         assert [p.symbol for p in picks] == ["AAPL", "MSFT"]
+        assert [p.action.value for p in picks] == ["STRONGLY_BULLISH", "STRONGLY_BEARISH"]
+
+    @pytest.mark.parametrize("direction,event,legacy,new", [
+        ("long", "BUY_TURN", "STRONG_BUY", "STRONGLY_BULLISH"),
+        ("short", "SELL_TURN", "STRONG_SELL", "STRONGLY_BEARISH"),
+    ])
+    async def test_existing_filters_match_both_stored_action_formats(
+        self, direction, event, legacy, new
+    ):
+        documents = [
+            _document("AAPL", direction, 1, legacy),
+            _document("MSFT", direction, 2, new),
+            _document("OTHER", "short" if direction == "long" else "long"),
+        ]
+        collection = _collection()
+
+        def find(query):
+            return _AsyncCursor([
+                doc for doc in documents
+                if all(
+                    doc.get(key) in value["$in"] if isinstance(value, dict)
+                    else doc.get(key) == value
+                    for key, value in query.items()
+                )
+            ])
+
+        collection.find.side_effect = find
+        picks = await _service(collection).get_picks_by_date(
+            "2024-01-02", direction=direction, event=event, strict=True
+        )
+        assert [pick.symbol for pick in picks] == ["AAPL", "MSFT"]
+        assert [pick.action.value for pick in picks] == [new, new]
+        assert "action" not in collection.find.call_args.args[0]
 
     @pytest.mark.asyncio
     async def test_orders_by_side_then_rank_in_application(self):
@@ -298,6 +355,7 @@ class TestGetSymbolHistory:
         items = await service.get_symbol_history("aapl", limit=10, is_premium=True)
 
         assert [i.date for i in items] == ["2024-01-02", "2024-01-03"]
+        assert all(i.model_dump(mode="json")["action"] == "STRONGLY_BULLISH" for i in items)
 
     @pytest.mark.asyncio
     async def test_symbol_is_upper_cased(self):
@@ -333,6 +391,14 @@ class TestGetSummary:
         assert summary.long_count == 20
         assert summary.short_count == 20
         assert summary.horizon == 10
+        assert summary.top_longs[0].action == PivotAction.STRONGLY_BULLISH
+
+
+async def test_symbol_detail_normalizes_legacy_action():
+    collection = _collection()
+    collection.find_one = AsyncMock(return_value=_document(action="SELL"))
+    pick = await _service(collection).get_pick_for_symbol("2024-01-02", "aapl")
+    assert pick.model_dump(mode="json")["action"] == "BEARISH"
 
 
 class TestGetPerformance:
