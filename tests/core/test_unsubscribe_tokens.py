@@ -71,6 +71,26 @@ def test_expired_timed_token_never_uses_legacy_fallback(token_scope, secret):
         legacy.assert_not_called()
 
 
+@pytest.mark.parametrize("age,valid", [
+    (UNSUBSCRIBE_MAX_AGE, True),
+    (UNSUBSCRIBE_MAX_AGE + 1, False),
+])
+def test_exact_365_day_expiry_boundary(token_scope, age, valid):
+    salt, parse = token_scope
+    with patch("itsdangerous.timed.TimestampSigner.get_timestamp", return_value=1000):
+        token = URLSafeTimedSerializer(settings.unsubscribe_secret, salt=salt).dumps(
+            {"user_id": "user-123", "language": "en"}
+        )
+    with patch(
+        "itsdangerous.timed.TimestampSigner.get_timestamp", return_value=1000 + age
+    ):
+        if valid:
+            assert parse(token) == ("user-123", Language.ENGLISH)
+        else:
+            with pytest.raises(ValueError, match="unsubscribe link"):
+                parse(token)
+
+
 @pytest.mark.parametrize("serializer", [URLSafeSerializer, URLSafeTimedSerializer])
 def test_wrong_key_rejected(token_scope, serializer):
     salt, parse = token_scope
@@ -103,6 +123,23 @@ def test_campaign_shared_spec_token(service):
     assert service.parse_daily_signals_unsubscribe_token(token) == (
         "campaign-user", Language.ENGLISH
     )
+
+
+def test_duplicate_signing_keys_are_accepted(service, monkeypatch):
+    monkeypatch.setattr(settings, "unsubscribe_secret", settings.secret_key)
+    token = URLSafeTimedSerializer(
+        settings.secret_key, salt=MARKETING_UNSUBSCRIBE_SALT
+    ).dumps({"user_id": "user-123", "language": "en"})
+    with patch(
+        "app.core.email.URLSafeTimedSerializer", wraps=URLSafeTimedSerializer
+    ) as serializer:
+        assert service.parse_unsubscribe_token(token) == ("user-123", Language.ENGLISH)
+    assert serializer.call_args.args[0] == [settings.secret_key]
+
+
+def test_dedicated_key_reads_environment(monkeypatch):
+    monkeypatch.setenv("UNSUBSCRIBE_SECRET", "test-dedicated-key")
+    assert Settings(_env_file=None).unsubscribe_secret == "test-dedicated-key"
 
 
 @pytest.mark.parametrize("payload", [{}, {"user_id": "user", "language": "invalid"}, []])
