@@ -46,11 +46,17 @@ Restricted picks, predictions, Pivot, unusual-options, and backtest queries hide
 
 - Python `>=3.12`
 - FastAPI, Pydantic v2, Uvicorn
+- PyJWT for JWT signing and verification; existing HS256 tokens remain valid
+  with the same signing key, claims, and expiration semantics
 - MongoDB (PyMongo async client)
 - Pandas, NumPy, PyArrow
 - APScheduler
 - pytest and pytest-asyncio
 - Locked dependencies in `uv.lock`; [uv](https://docs.astral.sh/uv/) is recommended
+
+Security-related transitive dependency minimums are recorded in
+`[tool.uv].constraint-dependencies` in `pyproject.toml` and enforced when
+regenerating `uv.lock`.
 
 ## Quick start
 

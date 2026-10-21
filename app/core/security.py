@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 import secrets
@@ -30,15 +31,37 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
+def _decode_token(token: str) -> dict:
+    payload = jwt.decode(
+        token,
+        settings.secret_key,
+        algorithms=[settings.algorithm],
+        options={"verify_iat": False, "verify_exp": False},
+    )
+    # python-jose checked iat's numeric type, not whether it was in the future.
+    for claim in ("iat", "exp"):
+        if claim in payload:
+            try:
+                value = int(payload[claim])
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise InvalidTokenError(f"{claim} must be an integer") from exc
+            # Legacy tokens remain valid throughout their integer expiration second.
+            if claim == "exp" and value < int(datetime.now(timezone.utc).timestamp()):
+                raise jwt.ExpiredSignatureError("Signature has expired")
+    # No audience or accompanying access token is supplied to these verifiers.
+    if "aud" in payload or "at_hash" in payload:
+        raise InvalidTokenError("Unexpected audience or access-token hash")
+    return payload
+
 def verify_token(token: str) -> dict:
     """Verify and decode JWT token"""
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = _decode_token(token)
         token_type = payload["type"] if "type" in payload else "access"
         if token_type != "access":
-            raise JWTError("Invalid token type")
+            raise InvalidTokenError("Invalid token type")
         return payload
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -69,7 +92,7 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
 def verify_refresh_token(token: str) -> dict:
     """Verify and decode JWT refresh token"""
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = _decode_token(token)
         token_type = payload.get("type")
 
         if token_type != "refresh":
@@ -80,7 +103,7 @@ def verify_refresh_token(token: str) -> dict:
             )
 
         return payload
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate refresh token",
@@ -101,14 +124,14 @@ def create_email_verification_token(email: str) -> str:
 def verify_email_verification_token(token: str) -> Optional[str]:
     """Verify email verification token and return email"""
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = _decode_token(token)
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
 
         if email is None or token_type != "email_verification":
             return None
         return email
-    except JWTError:
+    except InvalidTokenError:
         return None
 
 def is_premium_user(

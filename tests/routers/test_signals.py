@@ -291,4 +291,4 @@ def test_ticker_history_route_precedes_alpharank_date_route(mock_premium_user):
 def test_legacy_pivot_route_remains_registered():
     from app.main import app
 
-    assert "/api/v1/pivot/picks/latest" in {route.path for route in app.routes}
+    assert "/api/v1/pivot/picks/latest" in app.openapi()["paths"]

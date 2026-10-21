@@ -44,7 +44,10 @@ def test_robots_txt(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.text == "User-agent: *\nDisallow: /\n"
     assert response.headers["content-type"] == "text/plain; charset=utf-8"
-    route = next(route for route in app.routes if route.path == "/robots.txt")
+    route = next(
+        route for route in app.routes
+        if isinstance(route, APIRoute) and route.path == "/robots.txt"
+    )
     assert route.include_in_schema is False
 
 
