@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     market_overviews_collection: str = "market_overviews"
     alpharank_collection: str = "alpharank"
     alpharank_generations_collection: str = "alpharank_generations"
+    expiry_cleanup_interval_seconds: int = Field(default=3600, ge=1)
 
     # JWT
     secret_key: str = "your-secret-key-here"

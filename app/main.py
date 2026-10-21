@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, Response
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import time
 import os
@@ -12,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import Settings, settings
 from app.database import connect_to_mongo, close_mongo_connection
+from app.core.maintenance import run_expiry_cleanup
 from app.routers import auth, stocks, user, subscription, options, market, analysis, screener, watchlist, pivot, signals, referrals
 from app.services.user_service import user_service
 from app.services.stock_service import stock_service
@@ -44,6 +46,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    app.state.background_tasks = []
 
     try:
         # Connect to MongoDB
@@ -79,37 +82,41 @@ async def lifespan(app: FastAPI):
         )
         scheduler.start()
         app.state.scheduler = scheduler
+        app.state.background_tasks.append(
+            asyncio.create_task(run_expiry_cleanup(), name="expiry_cleanup")
+        )
         logger.info("Started APScheduler with monitor_latest_picks_cache job (02:00-02:29 UTC)")
 
     except Exception as e:
         logger.error(f"Failed to start application: {e}")
         raise
 
-    yield
-
-    # Shutdown
-    logger.info("Shutting down application...")
     try:
-        # Shutdown APScheduler if present
-        scheduler = getattr(app.state, "scheduler", None)
-        if scheduler:
-            try:
-                scheduler.shutdown(wait=False)
-                logger.info("APScheduler shutdown initiated")
-            except Exception:
-                logger.exception("Error shutting down APScheduler")
-        # Cancel background tasks (legacy)
-        for task in getattr(app.state, "background_tasks", []):
-            task.cancel()
-            try:
-                await task
-            except Exception:
-                pass
-        logger.info("Background tasks cancelled")
-        await close_mongo_connection()
-        logger.info("Application shutdown completed")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
+        yield
+    finally:
+        logger.info("Shutting down application...")
+        try:
+            scheduler = getattr(app.state, "scheduler", None)
+            if scheduler:
+                try:
+                    scheduler.shutdown(wait=False)
+                    logger.info("APScheduler shutdown initiated")
+                except Exception:
+                    logger.exception("Error shutting down APScheduler")
+            for task in app.state.background_tasks:
+                task.cancel()
+            for task in app.state.background_tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Error stopping background task")
+            logger.info("Background tasks cancelled")
+            await close_mongo_connection()
+            logger.info("Application shutdown completed")
+        except Exception:
+            logger.exception("Error during shutdown")
 
 
 def api_docs_kwargs(config: Settings) -> dict[str, str | None]:

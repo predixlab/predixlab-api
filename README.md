@@ -147,6 +147,7 @@ the new response values; no stored-data migration is required.
 | --- | --- | --- |
 | `MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection URI |
 | `DATABASE_NAME` | `predixlab` | Database name |
+| `EXPIRY_CLEANUP_INTERVAL_SECONDS` | `3600` | Interval between expired verification-code, rate-limit, and session purges; must be positive |
 | `SECRET_KEY` | insecure placeholder | Signs JWTs and legacy unsubscribe links; fallback for new links; replace before deployment |
 | `SESSION_SECRET_KEY` | required, no default | Independently signs OAuth session cookies; at least 32 characters excluding surrounding whitespace |
 | `ALGORITHM` | `HS256` | JWT algorithm |
@@ -195,6 +196,19 @@ Six-digit email codes expire after 10 minutes, become unusable after five failed
 attempts, and are consumed atomically on success. A replacement code resets the
 failure count. Login and registration share MongoDB-backed fixed-window counters
 in `rate_limits`, with an `expires_at` TTL index created at startup.
+Expiry checks do not depend on TTL deletion: verification and refresh lookups
+require `expires_at > now`, counters use time buckets and an expiry predicate,
+and resend cooldowns distinguish expired entries explicitly. `user_sessions`
+currently has no session-validation read path.
+
+A background cleanup starts immediately after application initialization, then
+runs every `EXPIRY_CLEANUP_INTERVAL_SECONDS`. Each pass deletes documents with
+`expires_at < now` from `verification_codes`, `rate_limits`, and `user_sessions`.
+This bounds expired-document storage on Cosmos DB MongoDB RU deployments, where
+TTL on custom fields may not be enforced. The deletes are idempotent across
+replicas; errors are logged, other collections and later passes continue, and
+the task is cancelled before MongoDB closes. Existing TTL indexes remain a
+best-effort optimization; index-creation failures are logged and non-fatal.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

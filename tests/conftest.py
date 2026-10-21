@@ -306,5 +306,9 @@ def mongo_auth_db(mock_db):
 
     configure(mock_db.verification_codes)
     configure(mock_db.rate_limits)
+    configure(mock_db.refresh_tokens)
+    configure(mock_db.oauth_tokens)
+    configure(mock_db.login_codes)
+    configure(mock_db.user_sessions)
     mock_db.users.update_one = AsyncMock()
     return mock_db
