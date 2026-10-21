@@ -20,7 +20,7 @@ from app.core.security import (
 )
 from app.config import settings
 from fastapi import HTTPException
-from jose import jwt
+import jwt
 
 
 class TestPasswordHashing:
