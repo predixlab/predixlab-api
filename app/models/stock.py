@@ -35,6 +35,10 @@ class StockData(BaseModel):
 
 class StockDataResponse(BaseModel):
     symbol: str
+    is_index: bool = Field(
+        ...,
+        description="Whether the symbol is in the configured US_REFERENCE_SYMBOLS list (case-insensitive)."
+    )
     data: List[StockData]
     total_records: int
 

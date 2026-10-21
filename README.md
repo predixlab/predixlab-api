@@ -204,6 +204,8 @@ Authorization: Bearer <access_token>
 | `/api/v1/subscription` | Stripe prices, checkout, subscription state, cancellation, and webhooks |
 | `/api/v1/referrals` | Public click attribution and authenticated referral performance |
 
+`GET /api/v1/stocks/data/{symbol}` includes the required boolean `is_index`, classified case-insensitively from `US_REFERENCE_SYMBOLS`. Clients should use only this flag to identify index symbols; it is included in cached and filtered responses.
+
 The runtime OpenAPI specification is authoritative for request parameters and response models; route implementations live in `app/routers/`. See the [Stripe integration guide](STRIPE_INTEGRATION.md) for Stripe events, authentication boundaries, and local testing.
 
 ## Common commands

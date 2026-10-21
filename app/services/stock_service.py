@@ -178,6 +178,7 @@ class StockService:
 
         return StockDataResponse(
             symbol=stock_response.symbol,
+            is_index=settings.is_index_symbol(stock_response.symbol),
             data=filtered_data,
             total_records=len(filtered_data)
         )
@@ -437,6 +438,7 @@ class StockService:
         # Cache all data
         full_result = StockDataResponse(
             symbol=symbol,
+            is_index=settings.is_index_symbol(symbol),
             data=all_stock_data,
             total_records=len(all_stock_data)
         )

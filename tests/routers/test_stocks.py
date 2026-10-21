@@ -2,12 +2,14 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
+from app.core.dependencies import get_current_user
 from app.routers.stocks import (
     get_available_dates, get_daily_picks, get_latest_picks,
     get_predictions, get_latest_predictions, get_stock_data,
-    get_all_stocks, run_backtest, search_stocks
+    get_all_stocks, run_backtest, search_stocks, router
 )
 from app.models.user import UserInDB, UserRole
 from app.models.stock import (
@@ -227,13 +229,15 @@ class TestGetStockData:
     """Tests for get_stock_data endpoint."""
 
     @pytest.mark.asyncio
-    async def test_get_stock_data_success(self, mock_premium_user):
+    @pytest.mark.parametrize(("symbol", "is_index"), [("AAPL", False), ("SPY", True)])
+    async def test_get_stock_data_success(self, mock_premium_user, symbol, is_index):
         """Test getting stock data successfully."""
         with patch('app.routers.stocks.stock_service') as mock_service:
             mock_service.get_stock_data = AsyncMock(return_value=StockDataResponse(
-                symbol="AAPL",
+                symbol=symbol,
+                is_index=is_index,
                 data=[StockData(
-                    symbol="AAPL",
+                    symbol=symbol,
                     date=datetime(2024, 1, 1),
                     open=100.0,
                     high=105.0,
@@ -245,15 +249,46 @@ class TestGetStockData:
             ))
 
             result = await get_stock_data(
-                symbol="AAPL",
+                symbol=symbol,
                 current_user=mock_premium_user,
                 start_date=None,
                 end_date=None,
                 period=None
             )
 
-        assert result.symbol == "AAPL"
+        assert result.symbol == symbol
+        assert result.is_index is is_index
         assert result.total_records == 1
+
+    @pytest.mark.parametrize(
+        ("symbol", "is_index"), [("AAPL", False), ("SPY", True), ("^GSPC", False)]
+    )
+    def test_get_stock_data_response_includes_is_index(
+        self, mock_premium_user, symbol, is_index
+    ):
+        app = FastAPI()
+        app.include_router(router, prefix="/api/v1")
+        app.dependency_overrides[get_current_user] = lambda: mock_premium_user
+        with patch('app.routers.stocks.stock_service') as mock_service:
+            mock_service.get_stock_data = AsyncMock(return_value=StockDataResponse(
+                symbol=symbol, is_index=is_index, data=[], total_records=0
+            ))
+
+            response = TestClient(app).get(f"/api/v1/stocks/data/{symbol}")
+
+        assert response.status_code == 200
+        assert response.json()["symbol"] == symbol
+        assert response.json()["is_index"] is is_index
+
+    def test_stock_data_openapi_documents_required_is_index(self):
+        app = FastAPI()
+        app.include_router(router)
+
+        schema = app.openapi()["components"]["schemas"]["StockDataResponse"]
+
+        assert "is_index" in schema["required"]
+        assert schema["properties"]["is_index"]["type"] == "boolean"
+        assert "US_REFERENCE_SYMBOLS" in schema["properties"]["is_index"]["description"]
 
     @pytest.mark.asyncio
     async def test_get_stock_data_not_found(self, mock_premium_user):
@@ -278,11 +313,12 @@ class TestGetStockData:
         with patch('app.routers.stocks.stock_service') as mock_service:
             mock_service.get_stock_data = AsyncMock(return_value=StockDataResponse(
                 symbol="AAPL",
+                is_index=False,
                 data=[],
                 total_records=0
             ))
 
-            await get_stock_data(
+            result = await get_stock_data(
                 symbol="AAPL",
                 current_user=mock_premium_user,
                 start_date=None,
@@ -295,6 +331,8 @@ class TestGetStockData:
             call_args = mock_service.get_stock_data.call_args
             assert call_args[0][0] == "AAPL"
             assert call_args[1]["period"] == "3m"
+
+        assert result.is_index is False
 
 
 class TestGetAllStocks:

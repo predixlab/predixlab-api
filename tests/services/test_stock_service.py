@@ -120,6 +120,7 @@ class TestStockServiceReferenceData:
         assert result is not None
         assert result.model_dump(mode="json") == {
             "symbol": symbol,
+            "is_index": True,
             "total_records": 2,
             "data": [
                 {
@@ -135,6 +136,7 @@ class TestStockServiceReferenceData:
             ],
         }
         assert full_result is not None
+        assert full_result.is_index is True
         assert full_result.total_records == 3
         assert [bar.date for bar in full_result.data] == [
             datetime(2024, 4, 30), datetime(2024, 3, 31), datetime(2024, 3, 30)
@@ -172,6 +174,7 @@ class TestStockServiceReferenceData:
 
         assert result is not None
         assert result.symbol == symbol
+        assert result.is_index is False
         assert result.data[0].symbol == symbol
         assert result.total_records == 1
         assert result.data[0].close == 104.0
@@ -196,10 +199,52 @@ class TestStockServiceReferenceData:
 
         assert reference_result is not None
         assert reference_result.symbol == "VTI"
+        assert reference_result.is_index is True
         assert reference_result.data[0].close == 104
         assert regular_result is not None
         assert regular_result.symbol == "SPY"
+        assert regular_result.is_index is False
         assert regular_result.data[0].close == 101
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("symbol", "is_index"),
+        [("SPY", True), ("spy", True), ("AAPL", False), ("^GSPC", False)],
+    )
+    @pytest.mark.parametrize(
+        ("filters", "total_records"),
+        [
+            ({}, 3),
+            ({"period": "1m"}, 2),
+            ({"start_date": "2024-03-31"}, 2),
+            ({"end_date": "2024-03-31"}, 2),
+            ({"start_date": "2024-03-31", "end_date": "2024-04-01"}, 1),
+            ({"start_date": "2024-05-01"}, 0),
+        ],
+    )
+    async def test_is_index_with_filters_and_cache(
+        self, stock_data_service, symbol, is_index, filters, total_records
+    ):
+        service = stock_data_service
+        data_dir = service.reference_data_dir if is_index else service.stock_data_dir
+        data_path = data_dir / f"{symbol.upper()}.csv"
+        data_path.write_text(
+            "date,open,high,low,close,volume\n"
+            "2024-03-30,100,105,99,104,1000\n"
+            "2024-03-31,100,105,99,104,1000\n"
+            "2024-04-30,100,105,99,104,1000\n"
+        )
+
+        with patch.object(service, "_load_data_file", wraps=service._load_data_file) as load:
+            result = await service.get_stock_data(symbol, **filters)
+            cached_result = await service.get_stock_data(symbol.lower(), **filters)
+            load.assert_called_once_with(data_path)
+
+        for response in (result, cached_result):
+            assert response is not None
+            assert response.symbol == symbol.upper()
+            assert response.is_index is is_index
+            assert response.total_records == total_records
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -398,7 +443,7 @@ class TestStockServiceDataFilters:
             StockData(symbol="AAPL", date=datetime(2024, 1, 1), open=100, high=105, low=99, close=104, volume=1000),
             StockData(symbol="AAPL", date=datetime(2024, 1, 2), open=104, high=110, low=103, close=108, volume=1100),
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=2)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=2)
 
         result = service._apply_data_filters(response, None, None, None, None)
 
@@ -414,7 +459,7 @@ class TestStockServiceDataFilters:
             StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
             StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=3)
 
         start_datetime = datetime(2024, 1, 10)
         end_datetime = datetime(2024, 1, 20)
@@ -433,7 +478,7 @@ class TestStockServiceDataFilters:
             StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
             StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=3)
 
         start_datetime = datetime(2024, 1, 10)
 
@@ -450,7 +495,7 @@ class TestStockServiceDataFilters:
             StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
             StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=3)
 
         end_datetime = datetime(2024, 1, 20)
 
@@ -476,7 +521,7 @@ class TestStockServiceDataFilters:
             )
             for offset in (0, 30, 80, 200, 400)
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=5)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=5)
 
         result = service._apply_data_filters(response, None, None, 90, "3m")
 
@@ -496,7 +541,7 @@ class TestStockServiceDataFilters:
             )
             for offset in (0, 10, 20)
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=3)
 
         result = service._apply_data_filters(response, None, None, 90, "3m")
 
@@ -515,7 +560,7 @@ class TestStockServiceDataFilters:
             )
             for offset in (0, 100)
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=2)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=2)
 
         result = service._apply_data_filters(response, None, None, 90, "3m")
 
@@ -526,7 +571,7 @@ class TestStockServiceDataFilters:
         """An empty series stays empty rather than raising."""
         service = StockService()
 
-        response = StockDataResponse(symbol="AAPL", data=[], total_records=0)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=[], total_records=0)
 
         result = service._apply_data_filters(response, None, None, 90, "3m")
 
@@ -542,7 +587,7 @@ class TestStockServiceDataFilters:
             StockData(symbol="AAPL", date=datetime(2024, 1, 15), open=104, high=110, low=103, close=108, volume=1100),
             StockData(symbol="AAPL", date=datetime(2024, 1, 31), open=108, high=115, low=107, close=112, volume=1200),
         ]
-        response = StockDataResponse(symbol="AAPL", data=stock_data, total_records=3)
+        response = StockDataResponse(symbol="AAPL", is_index=False, data=stock_data, total_records=3)
 
         result = service._apply_data_filters(
             response, datetime(2024, 1, 10), datetime(2024, 1, 20), 90, "3m"
