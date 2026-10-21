@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     )
 
     # Email
+    unsubscribe_secret: str = ""
     acs_connection_string: str = ""
     acs_sender: str = ""
     # Delivery backend: "acs" sends via Azure Communication Services,

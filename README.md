@@ -131,7 +131,7 @@ Production mode disables all three endpoints by default. Every response includes
 | --- | --- | --- |
 | `MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection URI |
 | `DATABASE_NAME` | `predixlab` | Database name |
-| `SECRET_KEY` | insecure placeholder | Signs JWTs and unsubscribe links; replace before deployment |
+| `SECRET_KEY` | insecure placeholder | Signs JWTs and legacy unsubscribe links; fallback for new links; replace before deployment |
 | `SESSION_SECRET_KEY` | required, no default | Independently signs OAuth session cookies; at least 32 characters excluding surrounding whitespace |
 | `ALGORITHM` | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access-token lifetime |
@@ -153,12 +153,19 @@ Production mode disables all three endpoints by default. Every response includes
 | `CORS_ORIGINS` | local `3000`, `8080` | Allowed origins as a JSON array |
 | `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links |
 | `EMAIL_BACKEND` | `acs` | `acs` sends email; `console` writes messages to the application log |
+| `UNSUBSCRIBE_SECRET` | empty (uses `SECRET_KEY`) | Dedicated unsubscribe signing key; use the same value in API and Campaign |
 | `ACS_CONNECTION_STRING` / `ACS_SENDER` | empty | Azure Communication Services email configuration |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `GOOGLE_OAUTH_CALLBACK_URL` | local API callback | Google server callback |
 | `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | empty | Microsoft OAuth |
 | `MICROSOFT_OAUTH_CALLBACK_URL` | local API callback | Microsoft server callback |
 | `OAUTH_REDIRECT_URL` | `http://localhost:3000/auth/callback` | Frontend URL after OAuth completes |
+
+New marketing and Daily Signals unsubscribe links use timestamped signatures and
+expire after 365 days. Verification accepts timed links signed with either
+`SECRET_KEY` or `UNSUBSCRIBE_SECRET`. Temporarily, existing untimed links signed
+with `SECRET_KEY` remain valid; expired timed links are always rejected. Keep the
+API and Campaign keys aligned before enabling dedicated-key signing.
 
 ### Session key deployment and rotation
 
