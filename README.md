@@ -71,7 +71,7 @@ At minimum, in `.env`:
 - set `SESSION_SECRET_KEY` to a separate strong random value for OAuth session cookies;
 - verify `MONGODB_URL` and `DATABASE_NAME`;
 - use `EMAIL_BACKEND=console` locally when ACS is unavailable;
-- set `DEBUG=True` to enable Swagger UI and ReDoc.
+- set `DEBUG=True` to enable OpenAPI, Swagger UI, and ReDoc unless `ENABLE_API_DOCS` overrides it.
 
 Generate a different value for each signing key:
 
@@ -106,12 +106,14 @@ curl http://localhost:8000/health
 curl http://localhost:8000/api/v1/info
 ```
 
-When `DEBUG=True`:
+When `ENABLE_API_DOCS=True` (or unset with `DEBUG=True`):
 
+- OpenAPI schema: <http://localhost:8000/openapi.json>
 - Swagger UI: <http://localhost:8000/docs>
 - ReDoc: <http://localhost:8000/redoc>
 
-Production mode disables both endpoints by default.
+Production mode disables all three endpoints by default. Every response includes
+`X-Robots-Tag: noindex, nofollow`, and `/robots.txt` disallows crawling the entire API.
 
 ## Configuration
 
@@ -140,7 +142,8 @@ Production mode disables both endpoints by default.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APP_NAME` / `APP_VERSION` | `PredixLab` / `1.0.0` | Application information in OpenAPI and status responses |
-| `DEBUG` | `False` | Debug logging, reload for direct `app.main` execution, and API docs |
+| `DEBUG` | `False` | Debug logging, reload for direct `app.main` execution, and API docs when `ENABLE_API_DOCS` is unset |
+| `ENABLE_API_DOCS` | unset | Overrides `DEBUG` for `/openapi.json`, `/docs`, and `/redoc`; accepts `True` or `False` |
 | `CORS_ORIGINS` | local `3000`, `8080` | Allowed origins as a JSON array |
 | `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links |
 | `EMAIL_BACKEND` | `acs` | `acs` sends email; `console` writes messages to the application log |
@@ -206,7 +209,7 @@ Authorization: Bearer <access_token>
 
 `GET /api/v1/stocks/data/{symbol}` includes the required boolean `is_index`, classified case-insensitively from `US_REFERENCE_SYMBOLS`. Clients should use only this flag to identify index symbols; it is included in cached and filtered responses.
 
-The runtime OpenAPI specification is authoritative for request parameters and response models; route implementations live in `app/routers/`. See the [Stripe integration guide](STRIPE_INTEGRATION.md) for Stripe events, authentication boundaries, and local testing.
+When enabled, the runtime OpenAPI specification is authoritative for request parameters and response models; route implementations live in `app/routers/`. See the [Stripe integration guide](STRIPE_INTEGRATION.md) for Stripe events, authentication boundaries, and local testing.
 
 ## Common commands
 
@@ -256,7 +259,7 @@ tests/               # pytest tests organized by layer
 - [Environment template](.env.example)
 - [Stripe integration guide](STRIPE_INTEGRATION.md)
 - [Referral program](REFERRAL_PROGRAM.md)
-- Runtime documentation in debug mode: [`/docs`](http://localhost:8000/docs) and [`/redoc`](http://localhost:8000/redoc)
+- Runtime documentation when API docs are enabled: [`/docs`](http://localhost:8000/docs) and [`/redoc`](http://localhost:8000/redoc)
 - [Project development constraints](.github/copilot-instructions.md)
 
 ## Known boundaries

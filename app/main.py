@@ -1,15 +1,16 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, Response
 from contextlib import asynccontextmanager
 import logging
 import time
 import os
 from datetime import timezone
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.config import settings
+from app.config import Settings, settings
 from app.database import connect_to_mongo, close_mongo_connection
 from app.routers import auth, stocks, user, subscription, options, market, analysis, screener, watchlist, pivot, signals, referrals
 from app.services.user_service import user_service
@@ -28,6 +29,8 @@ from app.services.referral_service import referral_service
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.jobs.cache_monitor_jobs import monitor_latest_picks_cache as monitor_latest_picks_cache_job
+
+X_ROBOTS_TAG = "noindex, nofollow"
 
 # Configure logging
 logging.basicConfig(
@@ -108,13 +111,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
 
+
+def api_docs_kwargs(config: Settings) -> dict[str, str | None]:
+    enabled = (
+        config.enable_api_docs if config.enable_api_docs is not None else config.debug
+    )
+    return {
+        "openapi_url": "/openapi.json" if enabled else None,
+        "docs_url": "/docs" if enabled else None,
+        "redoc_url": "/redoc" if enabled else None,
+    }
+
+
 # Create FastAPI application
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="PredixLab API - Stock prediction and analysis platform",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    **api_docs_kwargs(settings),
     lifespan=lifespan
 )
 
@@ -170,6 +184,16 @@ async def log_requests(request: Request, call_next):
         logger.error(f"{request.method} {request.url.path} - ERROR: {str(e)} - {process_time:.3f}s")
         raise
 
+# Registered after CORS so preflight responses also receive the header.
+@app.middleware("http")
+async def add_robots_header(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
+    response = await call_next(request)
+    response.headers["X-Robots-Tag"] = X_ROBOTS_TAG
+    return response
+
+
 # Exception handlers
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -187,6 +211,8 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
     return JSONResponse(
         status_code=500,
+        # ServerErrorMiddleware handles exceptions outside HTTP middleware.
+        headers={"X-Robots-Tag": X_ROBOTS_TAG},
         content={
             "error": True,
             "message": "Internal server error" if not settings.debug else str(exc),
@@ -217,8 +243,18 @@ async def root():
         "message": f"Welcome to {settings.app_name}",
         "version": settings.app_version,
         "status": "operational",
-        "docs_url": "/docs" if settings.debug else "Contact admin for API documentation"
+        "docs_url": app.docs_url or "Contact admin for API documentation"
     }
+
+@app.api_route(
+    "/robots.txt",
+    methods=["GET", "HEAD"],
+    response_class=PlainTextResponse,
+    include_in_schema=False,
+)
+async def robots_txt() -> PlainTextResponse:
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
 
 @app.get("/health", tags=["Health"])
 async def health_check():

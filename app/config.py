@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     public_api_url: str = "http://localhost:8000"
     user_notice_version: str = "2026-08-09"
     debug: bool = False
+    enable_api_docs: Optional[bool] = None
     cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8080"]
 
     # File paths
