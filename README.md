@@ -85,7 +85,8 @@ Identity, business routes, and Market Overview use MongoDB. Collector publishes 
 
 ```text
 data/
-├── stock_data/us_data/       # Per-symbol OHLCV CSV files
+├── stock_data/us_data/        # Per-symbol OHLCV CSV files
+├── reference_data/us_indices/ # Configured reference/index OHLCV CSV files
 ├── instruments/us.txt        # US instrument universe
 ├── calendar/us.txt           # Trading calendar
 └── snapshots/us/
@@ -163,7 +164,9 @@ Before rolling out this change, configure a new session key in every environment
 | `MARKET_OVERVIEWS_COLLECTION` | `market_overviews` | Compact daily Market Overview documents |
 | `PREDIXLAB_DATA_DIR` | unset | Shared data root; screener snapshot is below `snapshots/us/` |
 | `PREDICTIONS_DIR` / `PICKS_DIR` | `data/...` | Compatibility fields retained in `Settings`; the service has no read point |
-| `US_STOCK_DATA_DIR` | `data/stock_data/us_data` | OHLCV CSV directory |
+| `US_STOCK_DATA_DIR` | `data/stock_data/us_data` | OHLCV CSV directory for symbols outside `US_REFERENCE_SYMBOLS` |
+| `US_REFERENCE_SYMBOLS` | `SPY,QQQ,IWM,DIA` | Comma-separated reference/index symbols; case-insensitive, with whitespace trimmed and empty entries ignored |
+| `US_REFERENCE_DATA_DIR` | derived | Optional OHLCV CSV directory used only for symbols in `US_REFERENCE_SYMBOLS` |
 | `US_INDEX_PATH` | `data/instruments/us.txt` | US instrument universe |
 | `US_CALENDAR_PATH` | `data/calendar/us.txt` | US trading calendar |
 | `STRIPE_SECRET_KEY` | empty | Stripe server secret |
@@ -173,6 +176,10 @@ Before rolling out this change, configure a new session key in every environment
 | `STRIPE_TRIAL_PERIOD_DAYS` | `30` | Trial days for a first subscription |
 
 When `PREDIXLAB_DATA_DIR` is unset, the snapshot root derives from `US_STOCK_DATA_DIR`; with defaults, the API reads `data/snapshots/us/`.
+
+The API classifies each symbol using `US_REFERENCE_SYMBOLS` before choosing its history directory. Configured symbols read only from the reference/index directory; all others read only from `US_STOCK_DATA_DIR`. There is no cross-directory fallback, even if a CSV is missing or exists in both directories. `^GSPC` is not in the default list and continues to use `US_STOCK_DATA_DIR`.
+
+Reference history uses `US_REFERENCE_DATA_DIR` when set; otherwise it uses `<PREDIXLAB_DATA_DIR>/reference_data/us_indices`. If neither variable is set, it derives the data root from `Path(US_STOCK_DATA_DIR).parents[1]`. For example, `/data/stock_data/us_data` resolves to `/data/reference_data/us_indices`, with no additional environment configuration required.
 
 ## API use
 
@@ -196,6 +203,8 @@ Authorization: Bearer <access_token>
 | `/api/v1/options` | Unusual-options activity |
 | `/api/v1/subscription` | Stripe prices, checkout, subscription state, cancellation, and webhooks |
 | `/api/v1/referrals` | Public click attribution and authenticated referral performance |
+
+`GET /api/v1/stocks/data/{symbol}` includes the required boolean `is_index`, classified case-insensitively from `US_REFERENCE_SYMBOLS`. Clients should use only this flag to identify index symbols; it is included in cached and filtered responses.
 
 The runtime OpenAPI specification is authoritative for request parameters and response models; route implementations live in `app/routers/`. See the [Stripe integration guide](STRIPE_INTEGRATION.md) for Stripe events, authentication boundaries, and local testing.
 

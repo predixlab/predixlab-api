@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     picks_dir: str = "data/picks"
     predixlab_data_dir: Optional[str] = None
     us_stock_data_dir: str = "data/stock_data/us_data"
+    us_reference_data_dir: Optional[str] = None
+    us_reference_symbols: str = "SPY,QQQ,IWM,DIA"
     us_index_path: str = "data/instruments/us.txt"
     us_calendar_path: str = "data/calendar/us.txt"
 
@@ -76,6 +78,14 @@ class Settings(BaseSettings):
     stripe_monthly_price_id: str = ""
     stripe_yearly_price_id: str = ""
     stripe_trial_period_days: int = 30
+
+    def is_index_symbol(self, symbol: str) -> bool:
+        """Classify symbols using the configured reference list, ignoring case."""
+        return symbol.upper() in {
+            entry.strip().upper()
+            for entry in self.us_reference_symbols.split(",")
+            if entry.strip()
+        }
 
     @field_validator("session_secret_key")
     @classmethod

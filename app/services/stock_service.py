@@ -24,6 +24,15 @@ class StockService:
     def __init__(self):
         self.db = None
         self.stock_data_dir = Path(settings.us_stock_data_dir).expanduser()
+        if settings.us_reference_data_dir is not None:
+            self.reference_data_dir = Path(settings.us_reference_data_dir).expanduser()
+        else:
+            data_root = (
+                Path(settings.predixlab_data_dir).expanduser()
+                if settings.predixlab_data_dir is not None
+                else self.stock_data_dir.parents[1]
+            )
+            self.reference_data_dir = data_root / "reference_data" / "us_indices"
         self.us_index_path = Path(settings.us_index_path).expanduser()
         self.us_calendar_path = Path(settings.us_calendar_path).expanduser()
         self.cache = InMemoryCache(default_ttl_minutes=30)
@@ -169,6 +178,7 @@ class StockService:
 
         return StockDataResponse(
             symbol=stock_response.symbol,
+            is_index=settings.is_index_symbol(stock_response.symbol),
             data=filtered_data,
             total_records=len(filtered_data)
         )
@@ -355,6 +365,8 @@ class StockService:
         Returns:
             StockDataResponse with filtered data based on parameters
         """
+        symbol = symbol.upper()
+
         # Validate and parse date parameters
         start_datetime = None
         end_datetime = None
@@ -391,10 +403,10 @@ class StockService:
             logger.debug(f"Retrieved stock data from cache: {symbol}")
             return self._apply_data_filters(cached_result, start_datetime, end_datetime, period_days, period)
 
-        # Try US data first
-        us_data_path = self.stock_data_dir / f"{symbol.upper()}.csv"
-        if us_data_path.exists():
-            df = self._load_data_file(us_data_path)
+        data_dir = self.reference_data_dir if settings.is_index_symbol(symbol) else self.stock_data_dir
+        data_path = data_dir / f"{symbol}.csv"
+        if data_path.exists():
+            df = self._load_data_file(data_path)
         else:
             self.cache.set(cache_key, None)
             return None
@@ -426,6 +438,7 @@ class StockService:
         # Cache all data
         full_result = StockDataResponse(
             symbol=symbol,
+            is_index=settings.is_index_symbol(symbol),
             data=all_stock_data,
             total_records=len(all_stock_data)
         )
