@@ -53,11 +53,12 @@ class TestGetClientIP:
         
         result = await get_client_ip(request)
         
-        assert result == "192.168.1.1"
+        assert result == "10.0.0.1"
 
     @pytest.mark.asyncio
-    async def test_get_client_ip_from_x_real_ip(self):
+    async def test_get_client_ip_from_x_real_ip(self, monkeypatch):
         """Test getting client IP from X-Real-IP header."""
+        monkeypatch.setattr("app.core.dependencies.settings.trust_x_real_ip", True)
         request = MagicMock(spec=Request)
         request.headers = MagicMock()
         request.headers.get.side_effect = lambda key: {
@@ -94,6 +95,40 @@ class TestGetClientIP:
         result = await get_client_ip(request)
         
         assert result == "Unknown"
+
+    @pytest.mark.parametrize("spoofed", ["198.51.100.1", "203.0.113.9, 192.0.2.8"])
+    async def test_ignores_spoofed_leftmost_entries(self, spoofed, monkeypatch):
+        monkeypatch.setattr("app.core.dependencies.settings.trusted_proxy_hops", 1)
+        request = Request({
+            "type": "http",
+            "headers": [(b"x-forwarded-for", f"{spoofed}, 192.0.2.1".encode())],
+            "client": ("10.0.0.1", 1234),
+        })
+        assert await get_client_ip(request) == "192.0.2.1"
+
+    @pytest.mark.parametrize(
+        "headers,hops,expected",
+        [
+            ([(b"x-real-ip", b"198.51.100.1")], 1, "10.0.0.1"),
+            ([(b"x-forwarded-for", b"198.51.100.1, 192.0.2.1, 10.0.0.2")], 2, "192.0.2.1"),
+            ([(b"x-forwarded-for", b"198.51.100.1")], 0, "10.0.0.1"),
+            ([(b"x-forwarded-for", b"198.51.100.1")], 2, "10.0.0.1"),
+            ([(b"x-forwarded-for", b"198.51.100.1, invalid")], 1, "10.0.0.1"),
+            ([(b"x-forwarded-for", b"198.51.100.1, ")], 1, "10.0.0.1"),
+            ([(b"x-forwarded-for", b"2001:0db8:0:0:0:0:0:1")], 1, "2001:db8::1"),
+        ],
+    )
+    async def test_proxy_settings_and_invalid_headers(
+        self, headers, hops, expected, monkeypatch
+    ):
+        monkeypatch.setattr("app.core.dependencies.settings.trusted_proxy_hops", hops)
+        monkeypatch.setattr("app.core.dependencies.settings.trust_x_real_ip", False)
+        request = Request({
+            "type": "http",
+            "headers": headers,
+            "client": ("10.0.0.1", 1234),
+        })
+        assert await get_client_ip(request) == expected
 
 
 class TestGetCurrentUser:

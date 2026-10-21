@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from datetime import datetime, timezone, timedelta
+from ipaddress import ip_address
 import logging
 
 from app.core.security import verify_token
@@ -131,16 +132,23 @@ async def get_user_agent(request: Request) -> str:
     return request.headers.get("user-agent", "Unknown")
 
 async def get_client_ip(request: Request) -> str:
-    """Get client IP address from request"""
-    # Check for forwarded headers first
+    """Resolve the client from the trusted, right-hand end of the proxy chain."""
     forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Take the first IP if there are multiple
-        return forwarded_for.split(",")[0].strip()
+    if forwarded_for and settings.trusted_proxy_hops:
+        hops = forwarded_for.split(",")
+        if len(hops) >= settings.trusted_proxy_hops:
+            try:
+                return str(ip_address(hops[-settings.trusted_proxy_hops].strip()))
+            except ValueError:
+                pass
 
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
+    if settings.trust_x_real_ip:
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            try:
+                return str(ip_address(real_ip.strip()))
+            except ValueError:
+                pass
 
     # Fallback to client host
     if hasattr(request.client, "host"):

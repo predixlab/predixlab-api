@@ -405,7 +405,9 @@ class TestUserServiceVerification:
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5)
         }
         mock_db.verification_codes.find_one = AsyncMock(return_value=verification_doc)
-        mock_db.verification_codes.delete_one = AsyncMock()
+        mock_db.verification_codes.delete_one = AsyncMock(
+            return_value=MagicMock(deleted_count=1)
+        )
         mock_db.users.update_one = AsyncMock()
 
         result = await service.verify_email_code("test@example.com", "123456")

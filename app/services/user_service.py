@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 import logging
+import hmac
 
 from app.database import get_database
 from app.models.user import (
@@ -21,6 +22,8 @@ from app.config import settings
 from app.services.referral_service import referral_service
 
 logger = logging.getLogger(__name__)
+
+MAX_VERIFICATION_ATTEMPTS = 5
 
 class UserService:
     def __init__(self):
@@ -154,6 +157,7 @@ class UserService:
             "code": code,
             "expires_at": expires_at,
             "created_at": datetime.now(timezone.utc),
+            "failed_attempts": 0,
             "type": "registration" if for_registration else "login"
         }
 
@@ -179,26 +183,44 @@ class UserService:
         if self.db is None:
             await self.initialize()
 
-        # Find valid verification code
+        usable_code = {
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+            "$or": [
+                {"failed_attempts": {"$lt": MAX_VERIFICATION_ATTEMPTS}},
+                {"failed_attempts": {"$exists": False}},
+            ],
+        }
         verification = await self.db.verification_codes.find_one({
             "email": email,
-            "code": code,
-            "expires_at": {"$gt": datetime.now(timezone.utc)}
+            **usable_code,
         })
+        if not verification:
+            return False
 
-        if verification:
-            # Remove used verification code
-            await self.db.verification_codes.delete_one({"_id": verification["_id"]})
-
-            # Mark email as verified if user exists
-            await self.db.users.update_one(
-                {"email": email},
-                {"$set": {"email_verified": True}}
+        claim_query = {
+            "_id": verification["_id"],
+            **usable_code,
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        }
+        if not hmac.compare_digest(
+            code.encode("utf-8"), verification["code"].encode("utf-8")
+        ):
+            # At five failures the document is dead, even before TTL cleanup.
+            await self.db.verification_codes.update_one(
+                claim_query, {"$inc": {"failed_attempts": 1}}
             )
+            return False
 
-            return True
+        result = await self.db.verification_codes.delete_one(claim_query)
+        if result.deleted_count != 1:
+            return False
 
-        return False
+        await self.db.users.update_one(
+            {"email": email},
+            {"$set": {"email_verified": True}}
+        )
+
+        return True
 
     async def create_or_update_oauth_user(self, email: str, name: str, provider: OAuthProvider, provider_id: str) -> UserInDB:
         """Create or update OAuth user"""
@@ -419,7 +441,7 @@ class UserService:
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists"
+                detail="Invalid or expired verification code"
             )
 
         # Create new user
