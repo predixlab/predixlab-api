@@ -20,7 +20,7 @@ Dashboard / API clients
        └── Stripe: checkout, subscriptions, and webhooks
 ```
 
-- `predixlab-collector` produces market data, index constituents, and the read-only snapshots below `snapshots/us/`. Data collection runs as part of the hosted service and isn't in the public repositories.
+- The hosted data-collection job (Collector) produces market data, index constituents, and the read-only snapshots below `snapshots/us/`. It isn't in the public repositories.
 - `predixlab-signals` can publish Pivot events to `pivot_picks`; the API run-metadata endpoint reads the separate `pivot_runs` collection.
 - At startup, the API connects to MongoDB and loads its services. Between `02:00` and `02:29 UTC`, it checks every minute whether the latest-picks cache needs invalidation.
 
