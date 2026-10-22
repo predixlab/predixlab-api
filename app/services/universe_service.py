@@ -129,7 +129,7 @@ class UniverseService:
         if not symbols:
             logger.warning(
                 f"No index membership found under {self.index_dir}; the universe is empty. "
-                "Run `predixlab-collector collect_index --market=us`."
+                "Index constituent data is not available."
             )
 
         self.cache.set("universe", symbols)

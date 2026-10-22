@@ -85,9 +85,13 @@ class TestResolve:
 
 
 class TestFallbacks:
-    def test_no_files_yields_an_empty_universe(self, tmp_path):
+    def test_no_files_yields_an_empty_universe(self, tmp_path, caplog):
         service = UniverseService(index_path=tmp_path / "nothing" / "us.txt")
         assert service.get_universe() == []
+        assert caplog.messages == [
+            f"No index membership found under {service.index_dir}; the universe is empty. "
+            "Index constituent data is not available."
+        ]
 
     def test_unreadable_union_falls_back_to_the_index_files(
         self, universe, synthetic_market
