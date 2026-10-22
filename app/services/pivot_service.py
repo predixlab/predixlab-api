@@ -1,7 +1,7 @@
 """Data access for the pivot pick list.
 
 Reads only. The `pivot_picks` collection is written exclusively by the nightly
-`predixlab-pivot` Container Apps job.
+`predixlab-signal` Container Apps job.
 
 The free/premium split follows the same rule as the rest of the product: free
 users see everything older than `settings.free_user_days_limit` days and nothing
