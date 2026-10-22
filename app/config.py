@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, SecretStr, field_validator
 from typing import List, Optional
@@ -42,6 +44,8 @@ class Settings(BaseSettings):
 
     # Email
     unsubscribe_secret: str = ""
+    unsubscribe_allow_legacy_tokens: bool = True
+    unsubscribe_legacy_cutoff: Optional[datetime] = None
     acs_connection_string: str = ""
     acs_sender: str = ""
     # Delivery backend: "acs" sends via Azure Communication Services,
@@ -117,6 +121,17 @@ class Settings(BaseSettings):
                 "excluding surrounding whitespace"
             )
         return value
+
+    @field_validator("unsubscribe_legacy_cutoff")
+    @classmethod
+    def normalize_unsubscribe_legacy_cutoff(
+        cls, value: Optional[datetime]
+    ) -> Optional[datetime]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     class Config:
         env_file = ".env"

@@ -147,7 +147,7 @@ the new response values; no stored-data migration is required.
 | --- | --- | --- |
 | `MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection URI |
 | `DATABASE_NAME` | `predixlab` | Database name |
-| `EXPIRY_CLEANUP_INTERVAL_SECONDS` | `3600` | Interval between expired verification-code, rate-limit, and session purges; must be positive |
+| `EXPIRY_CLEANUP_INTERVAL_SECONDS` | `3600` | Interval between expired verification-code, rate-limit, session, login-code, and refresh-token purges; must be positive |
 | `SECRET_KEY` | insecure placeholder | Signs JWTs and legacy unsubscribe links; fallback for new links; replace before deployment |
 | `SESSION_SECRET_KEY` | required, no default | Independently signs OAuth session cookies; at least 32 characters excluding surrounding whitespace |
 | `ALGORITHM` | `HS256` | JWT algorithm |
@@ -171,6 +171,8 @@ the new response values; no stored-data migration is required.
 | `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links |
 | `EMAIL_BACKEND` | `acs` | `acs` sends email; `console` writes messages to the application log |
 | `UNSUBSCRIBE_SECRET` | empty (uses `SECRET_KEY`) | Dedicated unsubscribe signing key; use the same value in API and Campaign |
+| `UNSUBSCRIBE_ALLOW_LEGACY_TOKENS` | `True` | Accept untimed legacy links and timed links verified only by the `SECRET_KEY` fallback |
+| `UNSUBSCRIBE_LEGACY_CUTOFF` | unset | ISO date/datetime at which legacy links stop being accepted; date-only and timezone-less values mean UTC |
 | `ACS_CONNECTION_STRING` / `ACS_SENDER` | empty | Azure Communication Services email configuration |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `GOOGLE_OAUTH_CALLBACK_URL` | local API callback | Google server callback |
@@ -179,10 +181,22 @@ the new response values; no stored-data migration is required.
 | `OAUTH_REDIRECT_URL` | `http://localhost:3000/auth/callback` | Frontend URL after OAuth completes |
 
 New marketing and Daily Signals unsubscribe links use timestamped signatures and
-expire after 365 days. Verification accepts timed links signed with either
-`SECRET_KEY` or `UNSUBSCRIBE_SECRET`. Temporarily, existing untimed links signed
-with `SECRET_KEY` remain valid; expired timed links are always rejected. Keep the
-API and Campaign keys aligned before enabling dedicated-key signing.
+expire after 365 days. By default, verification accepts timed links signed with
+either `SECRET_KEY` or `UNSUBSCRIBE_SECRET`, and existing untimed links signed with
+`SECRET_KEY` remain valid. Set `UNSUBSCRIBE_ALLOW_LEGACY_TOKENS=False`, or set
+`UNSUBSCRIBE_LEGACY_CUTOFF` (for example, `2027-01-01T00:00:00Z`) and wait until
+that instant, to reject both untimed links and links verified only by the
+`SECRET_KEY` fallback. The cutoff applies when `now >= cutoff`, regardless of a
+token's issue date. Timed links signed with `UNSUBSCRIBE_SECRET` are unaffected;
+expired timed links are always rejected.
+
+For migration, first configure the same dedicated `UNSUBSCRIBE_SECRET` in the API
+and Campaign Function App, and have Campaign issue timed links using that key.
+Once all outstanding untimed links have aged out (approximately 60-90 days after
+Campaign starts issuing those links), set the cutoff or disable legacy tokens in
+the API. Then remove `SECRET_KEY` from the Campaign Function App. Keep `SECRET_KEY`
+in the API for JWT signing; the default settings preserve existing link behavior
+until legacy acceptance is explicitly retired.
 
 ### Session key deployment and rotation
 
@@ -203,7 +217,9 @@ currently has no session-validation read path.
 
 A background cleanup starts immediately after application initialization, then
 runs every `EXPIRY_CLEANUP_INTERVAL_SECONDS`. Each pass deletes documents with
-`expires_at < now` from `verification_codes`, `rate_limits`, and `user_sessions`.
+`expires_at < now` from `verification_codes`, `rate_limits`, `user_sessions`,
+`login_codes`, and `refresh_tokens`. Documents at or after the expiry boundary,
+or without an expiry field, are preserved.
 This bounds expired-document storage on Cosmos DB MongoDB RU deployments, where
 TTL on custom fields may not be enforced. The deletes are idempotent across
 replicas; errors are logged, other collections and later passes continue, and

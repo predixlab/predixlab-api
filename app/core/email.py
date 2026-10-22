@@ -2,6 +2,7 @@ import logging
 from jinja2 import Environment, FileSystemLoader
 import os
 import asyncio
+from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote
 
@@ -20,9 +21,18 @@ DAILY_SIGNALS_UNSUBSCRIBE_SALT = "predixlab-daily-signals-email-unsubscribe"
 
 
 def _load_unsubscribe_token(token: str, salt: str) -> dict:
+    cutoff = settings.unsubscribe_legacy_cutoff
+    allow_legacy = settings.unsubscribe_allow_legacy_tokens and (
+        cutoff is None or datetime.now(timezone.utc) < cutoff
+    )
     keys = list(dict.fromkeys(
-        key for key in (settings.secret_key, settings.unsubscribe_secret) if key
+        key for key in (
+            settings.secret_key if allow_legacy else None,
+            settings.unsubscribe_secret,
+        ) if key
     ))
+    if not keys:
+        raise BadData("Legacy unsubscribe tokens are disabled")
     try:
         return URLSafeTimedSerializer(keys, salt=salt).loads(
             token, max_age=UNSUBSCRIBE_MAX_AGE
@@ -30,6 +40,8 @@ def _load_unsubscribe_token(token: str, salt: str) -> dict:
     except SignatureExpired:
         raise
     except BadData:
+        if not allow_legacy:
+            raise
         # Temporary compatibility for untimed links already sent using SECRET_KEY.
         return URLSafeSerializer(settings.secret_key, salt=salt).loads(token)
 

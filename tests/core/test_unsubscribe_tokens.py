@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 import pytest
 from itsdangerous import URLSafeSerializer, URLSafeTimedSerializer
+from pydantic import ValidationError
 
 from app.config import Settings, settings
 from app.core.email import (
@@ -19,6 +21,8 @@ def service(monkeypatch):
     monkeypatch.setattr(settings, "email_backend", "console")
     monkeypatch.setattr(settings, "secret_key", "test-jwt-key")
     monkeypatch.setattr(settings, "unsubscribe_secret", "test-unsubscribe-key")
+    monkeypatch.setattr(settings, "unsubscribe_allow_legacy_tokens", True)
+    monkeypatch.setattr(settings, "unsubscribe_legacy_cutoff", None)
     return EmailService()
 
 
@@ -56,6 +60,107 @@ def test_legacy_untimed_secret_key_token(token_scope):
         {"user_id": "user-123", "language": "en"}
     )
     assert parse(token) == ("user-123", Language.ENGLISH)
+
+
+@pytest.mark.parametrize("allow_legacy,cutoff_offset,legacy_valid", [
+    (True, None, True),
+    (True, 1, True),
+    (True, 0, False),
+    (True, -1, False),
+    (False, None, False),
+    (False, 1, False),
+    (False, 0, False),
+    (False, -1, False),
+])
+@pytest.mark.parametrize("serializer,secret", [
+    (URLSafeSerializer, "test-jwt-key"),
+    (URLSafeSerializer, "test-unsubscribe-key"),
+    (URLSafeTimedSerializer, "test-jwt-key"),
+    (URLSafeTimedSerializer, "test-unsubscribe-key"),
+])
+def test_legacy_policy(
+    token_scope, monkeypatch, allow_legacy, cutoff_offset, legacy_valid,
+    serializer, secret,
+):
+    salt, parse = token_scope
+    now = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    cutoff = (
+        None if cutoff_offset is None else now + timedelta(seconds=cutoff_offset)
+    )
+    monkeypatch.setattr(settings, "unsubscribe_allow_legacy_tokens", allow_legacy)
+    monkeypatch.setattr(settings, "unsubscribe_legacy_cutoff", cutoff)
+    token = serializer(secret, salt=salt).dumps(
+        {"user_id": "user-123", "language": "en"}
+    )
+    valid = (
+        secret == settings.unsubscribe_secret
+        if serializer is URLSafeTimedSerializer
+        else False
+    ) or (legacy_valid and secret == settings.secret_key)
+    with patch("app.core.email.datetime", wraps=datetime) as clock:
+        clock.now.return_value = now
+        if valid:
+            assert parse(token) == ("user-123", Language.ENGLISH)
+        else:
+            with pytest.raises(ValueError, match="unsubscribe link"):
+                parse(token)
+
+
+def test_legacy_disabled_without_dedicated_key_rejects_tokens(
+    token_scope, monkeypatch,
+):
+    salt, parse = token_scope
+    monkeypatch.setattr(settings, "unsubscribe_allow_legacy_tokens", False)
+    monkeypatch.setattr(settings, "unsubscribe_secret", "")
+    token = URLSafeTimedSerializer(settings.secret_key, salt=salt).dumps(
+        {"user_id": "user-123", "language": "en"}
+    )
+    with pytest.raises(ValueError, match="unsubscribe link"):
+        parse(token)
+
+
+def test_legacy_disabled_accepts_timed_token_when_keys_match(token_scope, monkeypatch):
+    salt, parse = token_scope
+    monkeypatch.setattr(settings, "unsubscribe_allow_legacy_tokens", False)
+    monkeypatch.setattr(settings, "unsubscribe_secret", settings.secret_key)
+    token = URLSafeTimedSerializer(settings.secret_key, salt=salt).dumps(
+        {"user_id": "user-123", "language": "en"}
+    )
+    assert parse(token) == ("user-123", Language.ENGLISH)
+
+
+def test_legacy_settings_defaults(monkeypatch):
+    monkeypatch.delenv("UNSUBSCRIBE_ALLOW_LEGACY_TOKENS", raising=False)
+    monkeypatch.delenv("UNSUBSCRIBE_LEGACY_CUTOFF", raising=False)
+    config = Settings(_env_file=None)
+    assert config.unsubscribe_allow_legacy_tokens is True
+    assert config.unsubscribe_legacy_cutoff is None
+
+
+@pytest.mark.parametrize("value,expected", [("True", True), ("False", False)])
+def test_legacy_flag_reads_environment(monkeypatch, value, expected):
+    monkeypatch.setenv("UNSUBSCRIBE_ALLOW_LEGACY_TOKENS", value)
+    assert Settings(_env_file=None).unsubscribe_allow_legacy_tokens is expected
+
+
+@pytest.mark.parametrize("value", [
+    "2027-01-01",
+    "2027-01-01T00:00:00",
+    "2027-01-01T00:00:00Z",
+    "2027-01-01T08:00:00+08:00",
+])
+def test_legacy_cutoff_reads_iso_environment_as_utc(monkeypatch, value):
+    monkeypatch.setenv("UNSUBSCRIBE_LEGACY_CUTOFF", value)
+    assert Settings(_env_file=None).unsubscribe_legacy_cutoff == datetime(
+        2027, 1, 1, tzinfo=timezone.utc
+    )
+
+
+@pytest.mark.parametrize("value", ["not-a-date", "2027-02-30", ""])
+def test_invalid_legacy_cutoff_rejected(monkeypatch, value):
+    monkeypatch.setenv("UNSUBSCRIBE_LEGACY_CUTOFF", value)
+    with pytest.raises(ValidationError, match="unsubscribe_legacy_cutoff"):
+        Settings(_env_file=None)
 
 
 @pytest.mark.parametrize("secret", ["test-jwt-key", "test-unsubscribe-key"])

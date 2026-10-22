@@ -5,7 +5,7 @@
 This is a FastAPI-based backend for PredixLab, a stock prediction and analysis platform. The project provides:
 
 - Email verification and OAuth (Google, Microsoft) authentication
-- Stock prediction and daily stock recommendation APIs
+- Stock prediction and daily signals APIs
 - Premium membership system with Stripe integration
 - Historical stock data and backtest analysis
 

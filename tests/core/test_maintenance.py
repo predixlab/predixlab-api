@@ -9,6 +9,10 @@ from app.config import Settings, settings
 from app.core import maintenance
 
 
+def test_cleanup_includes_login_codes_and_refresh_tokens():
+    assert {"login_codes", "refresh_tokens"} <= set(maintenance.EXPIRING_COLLECTIONS)
+
+
 async def test_purge_removes_only_expired_documents_and_is_idempotent(mongo_auth_db):
     now = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
     database = {
@@ -21,9 +25,10 @@ async def test_purge_removes_only_expired_documents_and_is_idempotent(mongo_auth
             ("boundary", now),
             ("active", now + timedelta(seconds=1)),
             ("missing-expiry", None),
+            ("null-expiry", None),
         ):
             document = {"_id": key}
-            if expiry is not None:
+            if expiry is not None or key == "null-expiry":
                 document["expires_at"] = expiry
             await collection.insert_one(document)
 
@@ -36,7 +41,9 @@ async def test_purge_removes_only_expired_documents_and_is_idempotent(mongo_auth
         await maintenance.purge_expired_documents()
 
     for collection in database.values():
-        assert set(collection.documents) == {"boundary", "active", "missing-expiry"}
+        assert set(collection.documents) == {
+            "boundary", "active", "missing-expiry", "null-expiry",
+        }
         assert collection.delete_many.await_args_list == [
             call({"expires_at": {"$lt": now}}),
             call({"expires_at": {"$lt": now}}),

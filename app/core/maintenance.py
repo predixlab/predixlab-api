@@ -9,7 +9,13 @@ from app.database import get_database
 
 logger = logging.getLogger(__name__)
 
-EXPIRING_COLLECTIONS = ("verification_codes", "rate_limits", "user_sessions")
+EXPIRING_COLLECTIONS = (
+    "verification_codes",
+    "rate_limits",
+    "user_sessions",
+    "login_codes",
+    "refresh_tokens",
+)
 
 
 async def purge_expired_documents() -> None:
