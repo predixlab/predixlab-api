@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, SecretStr, field_validator
 from typing import List, Optional
@@ -9,6 +11,7 @@ class Settings(BaseSettings):
     market_overviews_collection: str = "market_overviews"
     alpharank_collection: str = "alpharank"
     alpharank_generations_collection: str = "alpharank_generations"
+    expiry_cleanup_interval_seconds: int = Field(default=3600, ge=1)
 
     # JWT
     secret_key: str = "your-secret-key-here"
@@ -25,6 +28,11 @@ class Settings(BaseSettings):
     otp_verify_window_seconds: int = Field(default=900, ge=1)
     otp_resend_cooldown_seconds: int = Field(default=60, ge=1)
 
+    oauth_exchange_ip_limit: int = Field(default=20, ge=1)
+    oauth_exchange_window_seconds: int = Field(default=300, ge=1)
+    refresh_ip_limit: int = Field(default=60, ge=1)
+    refresh_window_seconds: int = Field(default=300, ge=1)
+
     # Set to zero when requests do not pass through a trusted ingress.
     trusted_proxy_hops: int = Field(default=1, ge=0)
     trust_x_real_ip: bool = False
@@ -35,6 +43,9 @@ class Settings(BaseSettings):
     )
 
     # Email
+    unsubscribe_secret: str = ""
+    unsubscribe_allow_legacy_tokens: bool = True
+    unsubscribe_legacy_cutoff: Optional[datetime] = None
     acs_connection_string: str = ""
     acs_sender: str = ""
     # Delivery backend: "acs" sends via Azure Communication Services,
@@ -110,6 +121,17 @@ class Settings(BaseSettings):
                 "excluding surrounding whitespace"
             )
         return value
+
+    @field_validator("unsubscribe_legacy_cutoff")
+    @classmethod
+    def normalize_unsubscribe_legacy_cutoff(
+        cls, value: Optional[datetime]
+    ) -> Optional[datetime]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     class Config:
         env_file = ".env"

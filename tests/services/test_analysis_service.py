@@ -1,7 +1,7 @@
 """Unit tests for the per-symbol analysis service."""
 import pytest
 
-from app.models.market import RiskLevel, SignalStrength, TrendDirection
+from app.models.market import RiskLevel, SignalStrength, TechnicalAnalysisResponse, TrendDirection
 from app.services.analysis_service import (
     AnalysisService,
     aggregate_signal_score,
@@ -11,6 +11,28 @@ from app.services.analysis_service import (
     classify_trend,
 )
 from app.models.market import SymbolQuote
+
+
+@pytest.mark.parametrize("legacy,new", [
+    ("strong_buy", "strongly_bullish"),
+    ("buy", "bullish"),
+    ("neutral", "neutral"),
+    ("sell", "bearish"),
+    ("strong_sell", "strongly_bearish"),
+])
+def test_technical_signal_inputs_normalize_and_emit_directional_values(legacy, new):
+    for value in (legacy, new):
+        result = TechnicalAnalysisResponse(
+            symbol="AAPL",
+            quote=SymbolQuote(symbol="AAPL"),
+            trend=TrendDirection.NEUTRAL,
+            signal=value,
+            signal_score=0,
+        )
+        assert result.model_dump(mode="json")["signal"] == new
+    assert TechnicalAnalysisResponse.model_json_schema()["$defs"]["SignalStrength"]["enum"] == [
+        "strongly_bullish", "bullish", "neutral", "bearish", "strongly_bearish"
+    ]
 
 
 @pytest.fixture
@@ -269,11 +291,11 @@ class TestRuleEngine:
     @pytest.mark.parametrize(
         "score,expected",
         [
-            (0.8, SignalStrength.STRONG_BUY),
-            (0.3, SignalStrength.BUY),
+            (0.8, SignalStrength.STRONGLY_BULLISH),
+            (0.3, SignalStrength.BULLISH),
             (0.0, SignalStrength.NEUTRAL),
-            (-0.3, SignalStrength.SELL),
-            (-0.9, SignalStrength.STRONG_SELL),
+            (-0.3, SignalStrength.BEARISH),
+            (-0.9, SignalStrength.STRONGLY_BEARISH),
         ],
     )
     def test_classify_signal_buckets(self, score, expected):

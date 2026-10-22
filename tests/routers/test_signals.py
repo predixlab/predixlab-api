@@ -85,6 +85,7 @@ class TestCombinedSignals:
 
         assert result.date == "2024-01-02"
         assert result.pivot.longs[0].symbol == "MSFT"
+        assert result.model_dump(mode="json")["pivot"]["longs"][0]["action"] == "STRONGLY_BULLISH"
         assert result.alpharank.items[0].symbol == "AAPL"
         assert pivot.get_picks_by_date.call_args.kwargs["strict"] is True
         assert pivot.count_events.call_args.kwargs["strict"] is True

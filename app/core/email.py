@@ -2,10 +2,11 @@ import logging
 from jinja2 import Environment, FileSystemLoader
 import os
 import asyncio
+from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote
 
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadData, SignatureExpired, URLSafeSerializer, URLSafeTimedSerializer
 from app.config import settings
 from app.models.user import Language
 from app.core.i18n import i18n_service
@@ -14,6 +15,37 @@ from azure.communication.email import EmailClient
 
 logger = logging.getLogger(__name__)
 
+UNSUBSCRIBE_MAX_AGE = 365 * 24 * 3600
+MARKETING_UNSUBSCRIBE_SALT = "predixlab-marketing-email-unsubscribe"
+DAILY_SIGNALS_UNSUBSCRIBE_SALT = "predixlab-daily-signals-email-unsubscribe"
+
+
+def _load_unsubscribe_token(token: str, salt: str) -> dict:
+    cutoff = settings.unsubscribe_legacy_cutoff
+    allow_legacy = settings.unsubscribe_allow_legacy_tokens and (
+        cutoff is None or datetime.now(timezone.utc) < cutoff
+    )
+    keys = list(dict.fromkeys(
+        key for key in (
+            settings.secret_key if allow_legacy else None,
+            settings.unsubscribe_secret,
+        ) if key
+    ))
+    if not keys:
+        raise BadData("Legacy unsubscribe tokens are disabled")
+    try:
+        return URLSafeTimedSerializer(keys, salt=salt).loads(
+            token, max_age=UNSUBSCRIBE_MAX_AGE
+        )
+    except SignatureExpired:
+        raise
+    except BadData:
+        if not allow_legacy:
+            raise
+        # Temporary compatibility for untimed links already sent using SECRET_KEY.
+        return URLSafeSerializer(settings.secret_key, salt=salt).loads(token)
+
+
 class EmailService:
     def __init__(self):
         # ACS config (expected from environment via settings)
@@ -21,13 +53,13 @@ class EmailService:
         self.acs_sender = getattr(settings, "acs_sender", "")
         self.backend = (getattr(settings, "email_backend", "acs") or "acs").lower()
         self.acs_email_client = self._build_acs_client()
-        self.unsubscribe_serializer = URLSafeSerializer(
-            settings.secret_key,
-            salt="predixlab-marketing-email-unsubscribe",
+        self.unsubscribe_serializer = URLSafeTimedSerializer(
+            settings.unsubscribe_secret or settings.secret_key,
+            salt=MARKETING_UNSUBSCRIBE_SALT,
         )
-        self.daily_signals_unsubscribe_serializer = URLSafeSerializer(
-            settings.secret_key,
-            salt="predixlab-daily-signals-email-unsubscribe",
+        self.daily_signals_unsubscribe_serializer = URLSafeTimedSerializer(
+            settings.unsubscribe_secret or settings.secret_key,
+            salt=DAILY_SIGNALS_UNSUBSCRIBE_SALT,
         )
 
         # Setup Jinja2 template environment for different languages
@@ -96,10 +128,10 @@ class EmailService:
     def parse_unsubscribe_token(self, token: str) -> tuple[str, Language]:
         """Validate an unsubscribe token without exposing account data in the URL."""
         try:
-            payload = self.unsubscribe_serializer.loads(token)
+            payload = _load_unsubscribe_token(token, MARKETING_UNSUBSCRIBE_SALT)
             user_id = payload["user_id"]
             language = Language(payload.get("language", Language.ENGLISH.value))
-        except (BadSignature, KeyError, TypeError, ValueError) as exc:
+        except (BadData, KeyError, TypeError, ValueError) as exc:
             raise ValueError("Invalid unsubscribe link") from exc
         return user_id, language
 
@@ -109,12 +141,12 @@ class EmailService:
     ) -> tuple[str, Language]:
         """Validate a token scoped only to Daily Signals email preferences."""
         try:
-            payload = self.daily_signals_unsubscribe_serializer.loads(token)
+            payload = _load_unsubscribe_token(token, DAILY_SIGNALS_UNSUBSCRIBE_SALT)
             user_id = payload["user_id"]
             language = Language(
                 payload.get("language", Language.ENGLISH.value)
             )
-        except (BadSignature, KeyError, TypeError, ValueError) as exc:
+        except (BadData, KeyError, TypeError, ValueError) as exc:
             raise ValueError(
                 "Invalid Daily Signals unsubscribe link"
             ) from exc

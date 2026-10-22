@@ -19,7 +19,7 @@ def main():
     # Get configuration from environment
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
-    debug = os.getenv("DEBUG", "True").lower() == "true"
+    debug = os.getenv("DEBUG", "False").lower() == "true"
     workers = int(os.getenv("WORKERS", "1"))
     
     # Configure uvicorn

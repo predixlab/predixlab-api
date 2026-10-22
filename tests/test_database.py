@@ -103,3 +103,24 @@ async def test_authentication_ttl_indexes():
     fake_database["verification_codes"].create_index.assert_any_await(
         "expires_at", expireAfterSeconds=0
     )
+    fake_database["user_sessions"].create_index.assert_any_await(
+        "expires_at", expireAfterSeconds=0
+    )
+
+
+async def test_unsupported_custom_field_ttl_is_logged_and_nonfatal(caplog):
+    fake_database = FakeDatabase()
+
+    async def create_index(keys, **kwargs):
+        if "expireAfterSeconds" in kwargs:
+            raise OperationFailure("TTL is supported only on _ts", code=67)
+
+    for name in ("verification_codes", "rate_limits", "user_sessions"):
+        fake_database[name].create_index.side_effect = create_index
+
+    with patch.object(database.mongodb, "database", fake_database):
+        await database.create_indexes()
+
+    for name in ("verification_codes", "rate_limits", "user_sessions"):
+        assert f"Failed to create index on {name} for expires_at" in caplog.text
+    fake_database["options_structure_highlights"].create_index.assert_awaited()

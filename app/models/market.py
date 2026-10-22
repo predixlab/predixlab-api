@@ -38,11 +38,21 @@ class TrendDirection(str, Enum):
 class SignalStrength(str, Enum):
     """Aggregated technical stance."""
 
-    STRONG_BUY = "strong_buy"
-    BUY = "buy"
+    STRONGLY_BULLISH = "strongly_bullish"
+    BULLISH = "bullish"
     NEUTRAL = "neutral"
-    SELL = "sell"
-    STRONG_SELL = "strong_sell"
+    BEARISH = "bearish"
+    STRONGLY_BEARISH = "strongly_bearish"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Optional["SignalStrength"]:
+        legacy = {
+            "strong_buy": cls.STRONGLY_BULLISH,
+            "buy": cls.BULLISH,
+            "sell": cls.BEARISH,
+            "strong_sell": cls.STRONGLY_BEARISH,
+        }
+        return legacy.get(value) if isinstance(value, str) else None
 
 
 class MoverCategory(str, Enum):

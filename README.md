@@ -121,6 +121,22 @@ When `ENABLE_API_DOCS=True` (or unset with `DEBUG=True`):
 Production mode disables all three endpoints by default. Every response includes
 `X-Robots-Tag: noindex, nofollow`, and `/robots.txt` disallows crawling the entire API.
 
+### Directional signal labels
+
+Pivot `action` responses use `STRONGLY_BULLISH`, `BULLISH`, `NEUTRAL`,
+`BEARISH`, and `STRONGLY_BEARISH`. Technical analysis `signal` responses use
+the lowercase equivalents. Legacy Pivot states (`STRONG_BUY`, `BUY`, `HOLD`,
+`SELL`, `STRONG_SELL`) still published to MongoDB by the Signals pipeline are
+normalized when parsed, including pick details, summaries, histories, and the
+combined Signals board. Legacy technical-analysis values are also accepted on
+model input; responses and OpenAPI enums always use the new directional labels.
+
+There are no action-value query parameters or MongoDB action filters in the
+API. Existing `direction` (`long`/`short`) and `event` (`BUY_TURN`, `SELL_TURN`,
+`TREND_BUY`, `BASE_BREAKOUT`) filters are unchanged and select documents with
+either legacy or new actions. Clients displaying action labels must recognize
+the new response values; no stored-data migration is required.
+
 ## Configuration
 
 `Settings` in `app/config.py` reads environment variables or the repository-root `.env`. See the complete copyable template in [`.env.example`](.env.example).
@@ -131,7 +147,8 @@ Production mode disables all three endpoints by default. Every response includes
 | --- | --- | --- |
 | `MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection URI |
 | `DATABASE_NAME` | `predixlab` | Database name |
-| `SECRET_KEY` | insecure placeholder | Signs JWTs and unsubscribe links; replace before deployment |
+| `EXPIRY_CLEANUP_INTERVAL_SECONDS` | `3600` | Interval between expired verification-code, rate-limit, session, login-code, and refresh-token purges; must be positive |
+| `SECRET_KEY` | insecure placeholder | Signs JWTs and legacy unsubscribe links; fallback for new links; replace before deployment |
 | `SESSION_SECRET_KEY` | required, no default | Independently signs OAuth session cookies; at least 32 characters excluding surrounding whitespace |
 | `ALGORITHM` | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access-token lifetime |
@@ -148,17 +165,38 @@ Production mode disables all three endpoints by default. Every response includes
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APP_NAME` / `APP_VERSION` | `PredixLab` / `1.0.0` | Application information in OpenAPI and status responses |
-| `DEBUG` | `False` | Debug logging, reload for direct `app.main` execution, and API docs when `ENABLE_API_DOCS` is unset |
+| `DEBUG` | `False` | Debug logging and reload for `start.py` / direct `app.main` execution, and API docs when `ENABLE_API_DOCS` is unset |
 | `ENABLE_API_DOCS` | unset | Overrides `DEBUG` for `/openapi.json`, `/docs`, and `/redoc`; accepts `True` or `False` |
 | `CORS_ORIGINS` | local `3000`, `8080` | Allowed origins as a JSON array |
 | `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links |
 | `EMAIL_BACKEND` | `acs` | `acs` sends email; `console` writes messages to the application log |
+| `UNSUBSCRIBE_SECRET` | empty (uses `SECRET_KEY`) | Dedicated unsubscribe signing key; use the same value in API and Campaign |
+| `UNSUBSCRIBE_ALLOW_LEGACY_TOKENS` | `True` | Accept untimed legacy links and timed links verified only by the `SECRET_KEY` fallback |
+| `UNSUBSCRIBE_LEGACY_CUTOFF` | unset | ISO date/datetime at which legacy links stop being accepted; date-only and timezone-less values mean UTC |
 | `ACS_CONNECTION_STRING` / `ACS_SENDER` | empty | Azure Communication Services email configuration |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `GOOGLE_OAUTH_CALLBACK_URL` | local API callback | Google server callback |
 | `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | empty | Microsoft OAuth |
 | `MICROSOFT_OAUTH_CALLBACK_URL` | local API callback | Microsoft server callback |
 | `OAUTH_REDIRECT_URL` | `http://localhost:3000/auth/callback` | Frontend URL after OAuth completes |
+
+New marketing and Daily Signals unsubscribe links use timestamped signatures and
+expire after 365 days. By default, verification accepts timed links signed with
+either `SECRET_KEY` or `UNSUBSCRIBE_SECRET`, and existing untimed links signed with
+`SECRET_KEY` remain valid. Set `UNSUBSCRIBE_ALLOW_LEGACY_TOKENS=False`, or set
+`UNSUBSCRIBE_LEGACY_CUTOFF` (for example, `2027-01-01T00:00:00Z`) and wait until
+that instant, to reject both untimed links and links verified only by the
+`SECRET_KEY` fallback. The cutoff applies when `now >= cutoff`, regardless of a
+token's issue date. Timed links signed with `UNSUBSCRIBE_SECRET` are unaffected;
+expired timed links are always rejected.
+
+For migration, first configure the same dedicated `UNSUBSCRIBE_SECRET` in the API
+and Campaign Function App, and have Campaign issue timed links using that key.
+Once all outstanding untimed links have aged out (approximately 60-90 days after
+Campaign starts issuing those links), set the cutoff or disable legacy tokens in
+the API. Then remove `SECRET_KEY` from the Campaign Function App. Keep `SECRET_KEY`
+in the API for JWT signing; the default settings preserve existing link behavior
+until legacy acceptance is explicitly retired.
 
 ### Session key deployment and rotation
 
@@ -172,6 +210,21 @@ Six-digit email codes expire after 10 minutes, become unusable after five failed
 attempts, and are consumed atomically on success. A replacement code resets the
 failure count. Login and registration share MongoDB-backed fixed-window counters
 in `rate_limits`, with an `expires_at` TTL index created at startup.
+Expiry checks do not depend on TTL deletion: verification and refresh lookups
+require `expires_at > now`, counters use time buckets and an expiry predicate,
+and resend cooldowns distinguish expired entries explicitly. `user_sessions`
+currently has no session-validation read path.
+
+A background cleanup starts immediately after application initialization, then
+runs every `EXPIRY_CLEANUP_INTERVAL_SECONDS`. Each pass deletes documents with
+`expires_at < now` from `verification_codes`, `rate_limits`, `user_sessions`,
+`login_codes`, and `refresh_tokens`. Documents at or after the expiry boundary,
+or without an expiry field, are preserved.
+This bounds expired-document storage on Cosmos DB MongoDB RU deployments, where
+TTL on custom fields may not be enforced. The deletes are idempotent across
+replicas; errors are logged, other collections and later passes continue, and
+the task is cancelled before MongoDB closes. Existing TTL indexes remain a
+best-effort optimization; index-creation failures are logged and non-fatal.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -180,6 +233,8 @@ in `rate_limits`, with an `expires_at` TTL index created at startup.
 | `OTP_VERIFY_EMAIL_LIMIT` / `OTP_VERIFY_IP_LIMIT` | `10` / `30` | Verification requests per email / client IP per window |
 | `OTP_VERIFY_WINDOW_SECONDS` | `900` | Verification window duration |
 | `OTP_RESEND_COOLDOWN_SECONDS` | `60` | Minimum delay between code requests for the same email |
+| `OAUTH_EXCHANGE_IP_LIMIT` / `OAUTH_EXCHANGE_WINDOW_SECONDS` | `20` / `300` | OAuth code exchanges per client IP / fixed-window duration |
+| `REFRESH_IP_LIMIT` / `REFRESH_WINDOW_SECONDS` | `60` / `300` | Token refreshes per client IP / fixed-window duration |
 | `TRUSTED_PROXY_HOPS` | `1` | Select the client address this many hops from the right of `X-Forwarded-For`; `0` disables this header |
 | `TRUST_X_REAL_IP` | `False` | Explicitly allow `X-Real-IP` as a fallback before the socket address |
 
@@ -194,6 +249,10 @@ real client IP on the right. Only trust forwarded headers when every request
 passes through ingress that supplies those hops; use `TRUSTED_PROXY_HOPS=0` for
 direct access. Invalid or incomplete proxy chains fall back to the socket address
 (or a valid `X-Real-IP` when explicitly enabled).
+
+OAuth code exchange and token refresh use separate MongoDB-backed per-IP
+fixed-window limits before any token processing. Rejected attempts count, and
+HTTP 429 responses include `Retry-After`.
 
 ### Files and external services
 

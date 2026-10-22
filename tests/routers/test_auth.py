@@ -15,7 +15,10 @@ from app.models.user import (
 
 @pytest.fixture(autouse=True)
 def mock_code_rate_limit():
-    with patch("app.routers.auth.enforce_code_rate_limit", new_callable=AsyncMock) as limiter:
+    with (
+        patch("app.routers.auth.enforce_code_rate_limit", new_callable=AsyncMock) as limiter,
+        patch("app.routers.auth.enforce_ip_rate_limit", new_callable=AsyncMock),
+    ):
         yield limiter
 
 

@@ -18,7 +18,7 @@ from enum import Enum
 
 
 class PickDirection(str, Enum):
-    """Side of the book. There is no `flat`: a HOLD is not a pick."""
+    """Side of the book. There is no `flat`: a neutral state is not a pick."""
 
     LONG = "long"
     SHORT = "short"
@@ -48,15 +48,34 @@ class PivotAction(str, Enum):
 
     Context only. It does **not** determine the side: an event is dated by its
     trigger bar while its setup may be up to three sessions earlier, so by the
-    time a reversal confirms the state has often decayed to ``HOLD`` or flipped
+    time a reversal confirms the state has often decayed to ``NEUTRAL`` or flipped
     outright. ``direction`` is the decision.
     """
 
-    STRONG_BUY = "STRONG_BUY"
-    BUY = "BUY"
-    HOLD = "HOLD"
-    SELL = "SELL"
-    STRONG_SELL = "STRONG_SELL"
+    STRONGLY_BULLISH = "STRONGLY_BULLISH"
+    BULLISH = "BULLISH"
+    NEUTRAL = "NEUTRAL"
+    BEARISH = "BEARISH"
+    STRONGLY_BEARISH = "STRONGLY_BEARISH"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Optional["PivotAction"]:
+        if isinstance(value, str):
+            normalized = normalize_pivot_action(value)
+            if normalized != value:
+                return cls(normalized)
+        return None
+
+
+def normalize_pivot_action(value: str) -> str:
+    """Accept legacy pipeline states while always emitting directional labels."""
+    return {
+        "STRONG_BUY": "STRONGLY_BULLISH",
+        "BUY": "BULLISH",
+        "HOLD": "NEUTRAL",
+        "SELL": "BEARISH",
+        "STRONG_SELL": "STRONGLY_BEARISH",
+    }.get(value, value)
 
 
 class PivotPick(BaseModel):
@@ -182,7 +201,7 @@ class PivotPerformance(BaseModel):
     `horizon` sessions?
 
     Both the raw and the benchmark-relative figure are reported, because the raw
-    one alone is misleading: buy events average +0.55% while the universe
+    one alone is misleading: bullish events average +0.55% while the universe
     averages +0.56% on the same bars. Only the excess separates "the signal knew
     something" from "the market went up that fortnight".
     """
