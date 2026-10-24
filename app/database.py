@@ -5,6 +5,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 import logging
 from app.config import settings
+from app.core.indexes import AGENT_API_KEYS_LIST_INDEX
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ async def create_indexes():
         ("rate_limits", "expires_at", {"expireAfterSeconds": 0}),
         ("user_sessions", "user_id", {}),
         ("user_sessions", "expires_at", {"expireAfterSeconds": 0}),
-        ("agent_api_keys", [("user_id", 1), ("created_at", -1), ("_id", -1)], {}),
+        ("agent_api_keys", AGENT_API_KEYS_LIST_INDEX, {}),
         ("predictions", [("date", 1), ("market", 1)], {}),
         (
             "predictions",

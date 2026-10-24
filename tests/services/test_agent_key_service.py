@@ -264,6 +264,41 @@ async def test_listing_is_owned_paginated_and_has_explicit_states(
     assert agent_tokens[mock_premium_user.id].key.id not in listed.model_dump_json()
 
 
+@pytest.mark.parametrize(
+    "limit,offset,expected_ids",
+    [
+        (10, 0, ["e" * 32, "1" * 32, "f" * 32]),
+        (1, 0, ["e" * 32]),
+        (1, 1, ["1" * 32]),
+        (1, 2, ["f" * 32]),
+    ],
+)
+async def test_listing_is_newest_first_with_descending_id_tiebreak(
+    agent_key_database, mock_user, limit, offset, expected_ids
+):
+    now = datetime.now(timezone.utc)
+    with patch(
+        "app.services.agent_key_service.secrets.token_hex",
+        side_effect=["f" * 32, "1" * 32, "e" * 32],
+    ):
+        for name, created_at in [
+            ("Older", now - timedelta(days=1)),
+            ("Newer lower ID", now),
+            ("Newer higher ID", now),
+        ]:
+            issued = await agent_key_service.create(
+                mock_user.id, AgentApiKeyCreate(name=name)
+            )
+            agent_key_database.agent_api_keys.documents[issued.key.id]["created_at"] = created_at
+
+    listed = await agent_key_service.list(mock_user.id, limit, offset)
+
+    assert [key.id for key in listed.items] == expected_ids
+    assert listed.total_count == 3
+    assert listed.limit == limit
+    assert listed.offset == offset
+
+
 async def test_mongo_naive_utc_dates_are_supported(agent_key_database, agent_tokens, mock_user):
     issued = agent_tokens[mock_user.id]
     document = agent_key_database.agent_api_keys.documents[issued.key.id]
