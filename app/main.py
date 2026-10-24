@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, Response
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 import asyncio
 import logging
 import time
@@ -14,7 +14,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import Settings, settings
 from app.database import connect_to_mongo, close_mongo_connection
 from app.core.maintenance import run_expiry_cleanup
-from app.routers import auth, stocks, user, subscription, options, market, analysis, screener, watchlist, pivot, signals, referrals
+from app.mcp import MCPAuthenticationMiddleware, create_mcp_server
+from app.routers import auth, stocks, user, subscription, options, market, analysis, screener, watchlist, pivot, signals, referrals, agent
 from app.services.user_service import user_service
 from app.services.stock_service import stock_service
 from app.services.options_service import options_service
@@ -91,10 +92,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to start application: {e}")
         raise
 
+    mcp_lifespan = AsyncExitStack()
     try:
+        await mcp_lifespan.enter_async_context(app.state.mcp.session_manager.run())
         yield
     finally:
         logger.info("Shutting down application...")
+        try:
+            await mcp_lifespan.aclose()
+        except Exception:
+            logger.exception("Error shutting down MCP")
         try:
             scheduler = getattr(app.state, "scheduler", None)
             if scheduler:
@@ -137,6 +144,12 @@ app = FastAPI(
     description="PredixLab API - Stock prediction and analysis platform",
     **api_docs_kwargs(settings),
     lifespan=lifespan
+)
+app.state.mcp = create_mcp_server()
+app.mount(
+    "/mcp",
+    MCPAuthenticationMiddleware(app.state.mcp.streamable_http_app()),
+    name="mcp",
 )
 
 # Add session middleware for request.session (required by authlib)
@@ -242,6 +255,7 @@ app.include_router(screener.router, prefix="/api/v1")
 app.include_router(watchlist.router, prefix="/api/v1")
 app.include_router(watchlist.alerts_router, prefix="/api/v1")
 app.include_router(referrals.router, prefix="/api/v1")
+app.include_router(agent.router, prefix="/api/v1")
 
 # Root endpoints
 @app.get("/", tags=["Root"])
@@ -296,6 +310,7 @@ async def api_info():
             "Multi-criteria stock screener with preset strategies",
             "Watchlists and price/technical alerts",
             "Unusual options activity",
+            "Read-only MCP tools for agents (Streamable HTTP)",
             "Premium membership system"
         ],
         "endpoints": {
@@ -309,7 +324,9 @@ async def api_info():
             "watchlist": "/api/v1/watchlist",
             "alerts": "/api/v1/alerts",
             "options": "/api/v1/options",
-            "subscription": "/api/v1/subscription"
+            "subscription": "/api/v1/subscription",
+            "mcp": "/mcp/",
+            "agent": "/api/v1/agent"
         }
     }
 

@@ -26,6 +26,7 @@ def client() -> Iterator[TestClient]:
         ("/robots.txt", 200),
         ("/__missing_seo_test_path", 404),
         ("/api/v1/user/profile", 401),
+        ("/mcp/", 401),
         ("/api/v1/user/email/unsubscribe", 422),
     ],
 )
@@ -140,3 +141,9 @@ def test_app_and_root_use_effective_docs_configuration(client: TestClient) -> No
     assert response.json()["docs_url"] == (
         kwargs["docs_url"] or "Contact admin for API documentation"
     )
+
+
+def test_api_info_advertises_mcp(client: TestClient) -> None:
+    response = client.get("/api/v1/info")
+    assert response.status_code == 200
+    assert response.json()["endpoints"]["mcp"] == "/mcp/"

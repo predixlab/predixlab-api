@@ -207,6 +207,30 @@ async def test_database_failure_is_not_a_successful_fallback(limiter, mongo_auth
         )
 
 
+@pytest.mark.parametrize("dimension", ["ip", "key", "user", "issue"])
+async def test_mcp_limits_exact_threshold_and_retry_header(limiter, monkeypatch, dimension):
+    monkeypatch.setattr(settings, "mcp_ip_requests_per_minute", 2)
+    monkeypatch.setattr(settings, "mcp_key_requests_per_minute", 2 if dimension == "key" else 100)
+    monkeypatch.setattr(settings, "mcp_user_requests_per_minute", 2 if dimension == "user" else 100)
+    monkeypatch.setattr(settings, "mcp_key_issues_per_hour", 2)
+
+    async def request(index):
+        if dimension == "ip":
+            return await rate_limits.enforce_mcp_ip_rate_limit("192.0.2.1")
+        if dimension == "issue":
+            return await rate_limits.enforce_agent_key_issue_limit("user")
+        return await rate_limits.enforce_mcp_request_limit(
+            "user", f"key-{index}" if dimension == "user" else "key"
+        )
+
+    await request(0)
+    await request(1)
+    with pytest.raises(HTTPException) as error:
+        await request(2)
+    assert error.value.status_code == 429
+    assert 1 <= int(error.value.headers["Retry-After"]) <= (3600 if dimension == "issue" else 60)
+
+
 @pytest.mark.parametrize(
     "field",
     [
@@ -215,6 +239,9 @@ async def test_database_failure_is_not_a_successful_fallback(limiter, mongo_auth
         "otp_resend_cooldown_seconds",
         "oauth_exchange_ip_limit", "oauth_exchange_window_seconds",
         "refresh_ip_limit", "refresh_window_seconds",
+        "mcp_ip_requests_per_minute", "mcp_key_requests_per_minute",
+        "mcp_user_requests_per_minute", "mcp_key_issues_per_hour",
+        "mcp_api_keys_per_user",
     ],
 )
 def test_limits_must_be_positive(field):

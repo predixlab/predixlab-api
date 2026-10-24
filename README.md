@@ -38,6 +38,7 @@ Dashboard / API clients
 | Symbol analysis | Technical and risk indicators, peers, correlations, seasonality, and profiles |
 | Discovery and tracking | Custom and preset screeners, saved screens, watchlists, price and technical alerts |
 | Options | Unusual-options activity queries |
+| Agent access | Authenticated, read-only MCP tools over Streamable HTTP |
 | Membership | Free/premium visibility and Stripe monthly/yearly subscriptions |
 
 Restricted picks, predictions, Pivot, unusual-options, and backtest queries hide the latest `10` days from free users. Premium users and administrators can access current data. Configure the window with `FREE_USER_DAYS_LIMIT`.
@@ -168,7 +169,7 @@ the new response values; no stored-data migration is required.
 | `DEBUG` | `False` | Debug logging and reload for `start.py` / direct `app.main` execution, and API docs when `ENABLE_API_DOCS` is unset |
 | `ENABLE_API_DOCS` | unset | Overrides `DEBUG` for `/openapi.json`, `/docs`, and `/redoc`; accepts `True` or `False` |
 | `CORS_ORIGINS` | local `3000`, `8080` | Allowed origins as a JSON array |
-| `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links |
+| `PUBLIC_API_URL` | `http://localhost:8000` | API base URL for email unsubscribe links and the allowed public MCP Host/Origin |
 | `EMAIL_BACKEND` | `acs` | `acs` sends email; `console` writes messages to the application log |
 | `UNSUBSCRIBE_SECRET` | empty (uses `SECRET_KEY`) | Dedicated unsubscribe signing key; use the same value in API and Campaign |
 | `UNSUBSCRIBE_ALLOW_LEGACY_TOKENS` | `True` | Accept untimed legacy links and timed links verified only by the `SECRET_KEY` fallback |
@@ -300,10 +301,75 @@ Authorization: Bearer <access_token>
 | `/api/v1/options` | Unusual-options activity |
 | `/api/v1/subscription` | Stripe prices, checkout, subscription state, cancellation, and webhooks |
 | `/api/v1/referrals` | Public click attribution and authenticated referral performance |
+| `/api/v1/agent` | Named MCP API-key creation, rotation, revocation, metadata and connection settings |
 
 `GET /api/v1/stocks/data/{symbol}` includes the required boolean `is_index`, classified case-insensitively from `US_REFERENCE_SYMBOLS`. Clients should use only this flag to identify index symbols; it is included in cached and filtered responses.
 
 When enabled, the runtime OpenAPI specification is authoritative for request parameters and response models; route implementations live in `app/routers/`. See the [Stripe integration guide](STRIPE_INTEGRATION.md) for Stripe events, authentication boundaries, and local testing.
+
+## MCP agent access
+
+The API exposes stateless **Streamable HTTP MCP** at `/mcp/`
+(`http://localhost:8000/mcp/` locally), using the official Python SDK and the
+existing service lifespan. No separate process or sticky session is needed.
+
+Create a dedicated key in the Dashboard's **Agent connections** section.
+Every MCP request requires an `Authorization` header containing `Bearer`, a
+space, and that key. Website JWTs are not accepted by MCP; MCP keys cannot
+access ordinary REST APIs. Key management requires a website access JWT.
+No MCP OAuth discovery or dynamic client registration is provided.
+
+Keys grant only `mcp:read`. Tools reuse existing query handlers and current
+account entitlements, including the free-account delay. Deleted or inactive
+accounts are denied on every request. Keys use 256-bit random secret material,
+SHA-256 verifier storage, constant-time comparison, and request-time expiry.
+Plaintext appears only at creation/rotation; metadata never contains secrets.
+
+### Available tools
+
+| Area | Tools |
+| --- | --- |
+| Signals | `list_signal_dates`, `get_signals`, `get_pivot_signals`, `get_alpharank_signals`, `get_alpharank_history` |
+| Market and analysis | `get_market_snapshot`, `get_market_overview`, `get_market_movers`, `get_quotes`, `get_technical_analysis` |
+| Screener | `list_screener_presets`, `run_screener`, `run_screener_preset` |
+| Options | `list_option_activity_dates`, `get_unusual_options`, `get_option_activity`, `get_gamma_exposure`, `get_options_structure` |
+
+Start with the date or preset discovery tools rather than guessing available
+sessions or IDs. Optional `date` arguments use `YYYY-MM-DD`; omitting them selects
+the latest session visible to the account. Quotes and snapshots are daily
+observations, **not live prices**. Signal and options outputs are market research
+data, not investment advice.
+
+`tools/list` supplies parameter and output schemas. `run_screener` takes a
+`ScreenerRequest` under `request`. Screener/Pivot pages allow up to 200 entries,
+quotes up to 50 symbols, and options activity up to 20 ticker groups.
+Object results use `structuredContent`; lists use `{"result": [...]}`.
+Tool errors set `isError`; transport authentication errors return HTTP 401/403.
+
+### Generic agent configuration
+
+Use an HTTP MCP client with configurable headers. Adapt the outer structure to
+your client's documented format and replace `YOUR_API_KEY` with the actual key;
+do not transmit unresolved input or environment placeholders.
+
+```json
+{
+  "mcpServers": {
+    "predixlab": {
+      "type": "http",
+      "url": "https://api.predixlab.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Prefer client-managed secret storage; otherwise keep the configuration private
+with restricted file permissions (`0600` on macOS/Linux). Never put keys in
+URLs, browser storage, shared/source-controlled files, analytics, or logs.
+Issuance responses are marked `no-store`.
 
 ## Common commands
 
@@ -337,6 +403,7 @@ The current `docker-compose.yml` is **not a ready-to-run local solution**: it re
 ```text
 app/
 ├── main.py          # Application entry point, middleware, lifecycle, scheduler
+├── mcp.py           # Read-only MCP tools and transport authentication
 ├── config.py        # Pydantic Settings
 ├── database.py      # MongoDB connection and indexes
 ├── routers/         # HTTP routes

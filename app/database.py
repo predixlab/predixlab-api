@@ -1,6 +1,7 @@
 from typing import Any
 
 from pymongo.asynchronous.mongo_client import AsyncMongoClient
+from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 import logging
 from app.config import settings
@@ -8,8 +9,8 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 class MongoDB:
-    client: AsyncMongoClient = None
-    database = None
+    client: AsyncMongoClient[dict[str, Any]] | None = None
+    database: AsyncDatabase[dict[str, Any]] | None = None
 
 mongodb = MongoDB()
 
@@ -36,7 +37,7 @@ async def close_mongo_connection():
         await mongodb.client.close()
         logger.info("Disconnected from MongoDB")
 
-async def get_database():
+async def get_database() -> AsyncDatabase[dict[str, Any]] | None:
     """Get database instance"""
     return mongodb.database
 
@@ -48,7 +49,10 @@ async def _create_index(
 ) -> bool:
     """Create one index without preventing unrelated indexes from being created."""
     try:
-        collection = mongodb.database[collection_name]
+        db = await get_database()
+        if db is None:
+            raise RuntimeError("MongoDB connection is not initialized")
+        collection = db[collection_name]
         await collection.create_index(keys, **kwargs)
         return True
     except OperationFailure as e:
@@ -86,6 +90,7 @@ async def create_indexes():
         ("rate_limits", "expires_at", {"expireAfterSeconds": 0}),
         ("user_sessions", "user_id", {}),
         ("user_sessions", "expires_at", {"expireAfterSeconds": 0}),
+        ("agent_api_keys", [("user_id", 1), ("created_at", -1), ("_id", -1)], {}),
         ("predictions", [("date", 1), ("market", 1)], {}),
         (
             "predictions",

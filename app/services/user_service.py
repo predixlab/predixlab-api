@@ -735,6 +735,8 @@ class UserService:
             await self.initialize()
 
         await self.db.refresh_tokens.delete_many({"user_id": user.id})
+        await self.db.agent_api_keys.delete_many({"user_id": user.id})
+        await self.db.agent_api_key_quotas.delete_one({"_id": user.id})
         await self.db.user_sessions.delete_many({"user_id": user.id})
         await self.db.login_codes.delete_many({"user_id": user.id})
         await self.db.verification_codes.delete_many({"email": user.email})
