@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     oauth_exchange_window_seconds: int = Field(default=300, ge=1)
     refresh_ip_limit: int = Field(default=60, ge=1)
     refresh_window_seconds: int = Field(default=300, ge=1)
+    mcp_ip_requests_per_minute: int = Field(default=300, ge=1)
+    mcp_key_requests_per_minute: int = Field(default=60, ge=1)
+    mcp_user_requests_per_minute: int = Field(default=120, ge=1)
+    mcp_key_issues_per_hour: int = Field(default=20, ge=1)
+    mcp_api_keys_per_user: int = Field(default=10, ge=1, le=100)
 
     # Set to zero when requests do not pass through a trusted ingress.
     trusted_proxy_hops: int = Field(default=1, ge=0)

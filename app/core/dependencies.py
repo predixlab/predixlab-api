@@ -45,10 +45,18 @@ async def get_current_user(
     except Exception:
         raise credentials_exception
 
-    # Get user from database
+    return await get_active_user_by_id(user_id)
+
+
+async def get_active_user_by_id(user_id: str) -> UserInDB:
+    """Apply the same live account and referral checks to JWTs and scoped keys."""
     user = await user_service.get_user_by_id(user_id)
     if user is None:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Check if user is active
     if not user.is_active:

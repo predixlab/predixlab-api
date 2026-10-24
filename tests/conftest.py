@@ -215,14 +215,24 @@ def mongo_auth_db(mock_db):
 
     def matches(document, query):
         for key, expected in query.items():
+            actual = document
+            found = True
+            for part in key.split("."):
+                if isinstance(actual, list) and part.isdigit() and int(part) < len(actual):
+                    actual = actual[int(part)]
+                elif isinstance(actual, dict) and part in actual:
+                    actual = actual[part]
+                else:
+                    actual = None
+                    found = False
+                    break
             if key == "$or":
                 if not any(matches(document, clause) for clause in expected):
                     return False
             elif isinstance(expected, dict):
                 for operator, value in expected.items():
-                    actual = document.get(key)
                     if operator == "$exists":
-                        matched = (key in document) == value
+                        matched = found == value
                     elif operator == "$gt":
                         matched = actual is not None and actual > value
                     elif operator == "$lt":
@@ -271,9 +281,27 @@ def mongo_auth_db(mock_db):
                 document.update(update.get("$setOnInsert", {}))
                 result = await insert_one(document)
                 document = documents[result.inserted_id]
-            document.update(deepcopy(update.get("$set", {})))
+            for field, value in update.get("$set", {}).items():
+                target = document
+                parts = field.split(".")
+                for part in parts[:-1]:
+                    target = target.setdefault(part, {})
+                target[parts[-1]] = deepcopy(value)
+            for field in update.get("$unset", {}):
+                target = document
+                parts = field.split(".")
+                for part in parts[:-1]:
+                    target = target.get(part, {})
+                target.pop(parts[-1], None)
             for field, value in update.get("$inc", {}).items():
                 document[field] = document.get(field, 0) + value
+            for field, value in update.get("$addToSet", {}).items():
+                values = document.setdefault(field, [])
+                if value not in values:
+                    values.append(deepcopy(value))
+            for field, value in update.get("$pull", {}).items():
+                removed = value.get("$in", []) if isinstance(value, dict) else [value]
+                document[field] = [item for item in document.get(field, []) if item not in removed]
             return deepcopy(document) if return_document else previous
 
         async def update_one(query, update):
@@ -310,5 +338,79 @@ def mongo_auth_db(mock_db):
     configure(mock_db.oauth_tokens)
     configure(mock_db.login_codes)
     configure(mock_db.user_sessions)
+    configure(mock_db.agent_api_keys)
+    configure(mock_db.agent_api_key_quotas)
     mock_db.users.update_one = AsyncMock()
     return mock_db
+
+
+@pytest.fixture
+def agent_key_database(mongo_auth_db, mock_user, mock_premium_user):
+    """Stateful key storage and live users without a MongoDB process."""
+    from copy import deepcopy
+
+    collection = mongo_auth_db.agent_api_keys
+
+    class Cursor:
+        def __init__(self, documents):
+            self.documents = documents
+            self.offset = 0
+            self.limit_value = 100
+
+        def sort(self, fields):
+            for field, direction in reversed(fields):
+                self.documents.sort(key=lambda document: document[field], reverse=direction < 0)
+            return self
+
+        def skip(self, offset):
+            self.offset = offset
+            return self
+
+        def limit(self, limit):
+            self.limit_value = limit
+            return self
+
+        async def to_list(self, length):
+            end = self.offset + (min(length, self.limit_value) if length is not None else len(self.documents))
+            return deepcopy(self.documents[self.offset:end])
+
+    def owned(query):
+        def matches(document):
+            for key, value in query.items():
+                actual = document.get(key)
+                if isinstance(value, dict):
+                    if "$in" in value and actual not in value["$in"]:
+                        return False
+                    if "$ne" in value and actual == value["$ne"]:
+                        return False
+                elif actual != value:
+                    return False
+            return True
+        return [
+            document for document in collection.documents.values()
+            if matches(document)
+        ]
+
+    collection.find = MagicMock(side_effect=lambda query: Cursor(owned(query)))
+    collection.count_documents = AsyncMock(side_effect=lambda query: len(owned(query)))
+    users = {mock_user.id: mock_user, mock_premium_user.id: mock_premium_user}
+    with (
+        patch("app.services.agent_key_service.get_database", AsyncMock(return_value=mongo_auth_db)),
+        patch("app.core.rate_limits.get_database", AsyncMock(return_value=mongo_auth_db)),
+        patch(
+            "app.core.dependencies.user_service.get_user_by_id",
+            AsyncMock(side_effect=lambda user_id: users.get(user_id)),
+        ),
+    ):
+        yield mongo_auth_db
+
+
+@pytest.fixture
+async def agent_tokens(agent_key_database, mock_user, mock_premium_user):
+    from app.models.agent import AgentApiKeyCreate
+    from app.services.agent_key_service import agent_key_service
+
+    return {
+        user.id: await agent_key_service.create(user.id, AgentApiKeyCreate(name="Test agent"))
+        for user in (mock_user, mock_premium_user)
+    }

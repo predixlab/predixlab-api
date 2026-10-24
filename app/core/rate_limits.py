@@ -78,6 +78,35 @@ async def enforce_ip_rate_limit(
     )
 
 
+async def enforce_mcp_ip_rate_limit(client_ip: str) -> None:
+    """Count unauthenticated requests before attempting API-key verification."""
+    await _enforce_fixed_window_limits(
+        [(_key("ip", client_ip, prefix="mcp"), settings.mcp_ip_requests_per_minute)],
+        60,
+        datetime.now(timezone.utc),
+    )
+
+
+async def enforce_mcp_request_limit(user_id: str, key_id: str) -> None:
+    await _enforce_fixed_window_limits(
+        [
+            (_key("key", key_id, prefix="mcp"), settings.mcp_key_requests_per_minute),
+            (_key("user", user_id, prefix="mcp"), settings.mcp_user_requests_per_minute),
+        ],
+        60,
+        datetime.now(timezone.utc),
+    )
+
+
+async def enforce_agent_key_issue_limit(user_id: str) -> None:
+    """Throttle issuing secrets without preventing emergency revocation."""
+    await _enforce_fixed_window_limits(
+        [(_key("issue", user_id, prefix="mcp"), settings.mcp_key_issues_per_hour)],
+        3600,
+        datetime.now(timezone.utc),
+    )
+
+
 async def enforce_code_rate_limit(
     email: str,
     client_ip: str,

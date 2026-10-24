@@ -317,6 +317,7 @@ class TestUserDataDeletion:
         service.db = MagicMock()
         collection_names = (
             "refresh_tokens",
+            "agent_api_keys",
             "user_sessions",
             "login_codes",
             "verification_codes",
@@ -332,12 +333,19 @@ class TestUserDataDeletion:
         service.db.users.delete_one = AsyncMock(
             return_value=MagicMock(deleted_count=1)
         )
+        service.db.agent_api_key_quotas.delete_one = AsyncMock()
 
         deleted = await service.delete_account_data(mock_user)
 
         assert deleted is True
         service.db.refresh_tokens.delete_many.assert_awaited_once_with(
             {"user_id": mock_user.id}
+        )
+        service.db.agent_api_keys.delete_many.assert_awaited_once_with(
+            {"user_id": mock_user.id}
+        )
+        service.db.agent_api_key_quotas.delete_one.assert_awaited_once_with(
+            {"_id": mock_user.id}
         )
         service.db.user_sessions.delete_many.assert_awaited_once_with(
             {"user_id": mock_user.id}

@@ -106,6 +106,9 @@ async def test_authentication_ttl_indexes():
     fake_database["user_sessions"].create_index.assert_any_await(
         "expires_at", expireAfterSeconds=0
     )
+    fake_database["agent_api_keys"].create_index.assert_awaited_once_with(
+        [("user_id", 1), ("created_at", -1), ("_id", -1)]
+    )
 
 
 async def test_unsupported_custom_field_ttl_is_logged_and_nonfatal(caplog):

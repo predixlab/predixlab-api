@@ -22,13 +22,22 @@ async def mock_services():
         yield
 
 
+@pytest.fixture
+def scheduler_app():
+    from app.mcp import create_mcp_server
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.state.mcp = create_mcp_server()
+    app.state.mcp.streamable_http_app()
+    return app
+
+
 @pytest.mark.asyncio
-async def test_scheduler_configuration(mock_services):
+async def test_scheduler_configuration(mock_services, scheduler_app):
     """Test that the scheduler is configured correctly with CronTrigger"""
     from app.main import lifespan
-    from fastapi import FastAPI
-    
-    app = FastAPI()
+    app = scheduler_app
     
     async with lifespan(app):
         # Check that scheduler was added to app state
@@ -59,13 +68,11 @@ async def test_scheduler_configuration(mock_services):
 
 
 @pytest.mark.asyncio
-async def test_scheduler_job_timing(mock_services):
+async def test_scheduler_job_timing(mock_services, scheduler_app):
     """Test that the job is scheduled to run only during 02:00-02:29 UTC"""
     from app.main import lifespan
-    from fastapi import FastAPI
     from datetime import datetime
-    
-    app = FastAPI()
+    app = scheduler_app
     
     async with lifespan(app):
         scheduler = app.state.scheduler
@@ -89,12 +96,10 @@ async def test_scheduler_job_timing(mock_services):
 
 
 @pytest.mark.asyncio
-async def test_scheduler_shutdown(mock_services):
+async def test_scheduler_shutdown(mock_services, scheduler_app):
     """Test that the scheduler shutdown is initiated cleanly"""
     from app.main import lifespan
-    from fastapi import FastAPI
-    
-    app = FastAPI()
+    app = scheduler_app
     
     scheduler = None
     async with lifespan(app):
