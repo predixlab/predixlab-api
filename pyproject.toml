@@ -21,7 +21,7 @@ dependencies = [
     "pandas==2.3.0",
     "passlib[bcrypt]==1.7.4",
     "plotly==6.3.0",
-    "pyarrow>=18.0.0",
+    "pyarrow>=26.0.0",
     "pydantic==2.14.1",
     "pydantic-settings==2.16.1",
     "pyjwt==2.15.1",
