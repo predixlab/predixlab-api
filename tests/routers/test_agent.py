@@ -193,3 +193,24 @@ async def test_connection_configuration_never_embeds_credentials(
         assert body["scope"] == "mcp:read"
         assert body["expires_in_days_options"] == [30, 90, 365]
         assert "api_key" not in response.text
+
+
+@pytest.mark.parametrize("public_url", [
+    "http://localhost:8000", "http://127.0.0.1:8000", "http://[::1]:8000",
+    "https://localhost.", "https://127.0.0.2", "https://service.localhost",
+])
+async def test_remote_connection_never_advertises_loopback(agent_client, monkeypatch, public_url):
+    monkeypatch.setattr(settings, "public_api_url", public_url)
+    response = await agent_client.get(
+        "https://api.predixlab.com/api/v1/agent/connection",
+        headers={"X-Forwarded-Host": "localhost:8000"},
+    )
+    assert response.status_code == 503
+    assert "PUBLIC_API_URL" in response.json()["detail"]
+
+
+async def test_production_connection_keeps_https_behind_ingress(agent_client, monkeypatch):
+    monkeypatch.setattr(settings, "public_api_url", "https://api.predixlab.com")
+    response = await agent_client.get("http://api.predixlab.com/api/v1/agent/connection")
+    assert response.status_code == 200
+    assert response.json()["mcp_url"] == "https://api.predixlab.com/mcp/"

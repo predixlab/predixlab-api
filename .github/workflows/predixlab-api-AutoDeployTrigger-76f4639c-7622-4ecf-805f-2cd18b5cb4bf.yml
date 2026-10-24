@@ -43,3 +43,12 @@ jobs:
           containerAppName: predixlab-api
           resourceGroup: predixlab
           imageToBuild: predixlabacr.azurecr.io/predixlab-api:${{ github.sha }}
+
+      - name: Configure public API origin
+        # The deploy action replaces env vars; update only this value instead.
+        run: >-
+          az containerapp update
+          --name predixlab-api
+          --resource-group predixlab
+          --set-env-vars PUBLIC_API_URL=https://api.predixlab.com
+          --output none

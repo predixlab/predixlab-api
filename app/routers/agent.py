@@ -2,8 +2,9 @@
 
 from typing import Annotated
 from urllib.parse import urlsplit
+from ipaddress import ip_address
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from app.config import settings
 from app.core.dependencies import get_current_user
@@ -32,12 +33,24 @@ router = APIRouter(
 KeyId = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    if host is None:
+        return False
+    host = host.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 @router.get(
     "/connection",
     response_model=AgentConnection,
     dependencies=[Depends(get_current_user)],
 )
-async def get_agent_connection() -> AgentConnection:
+async def get_agent_connection(request: Request) -> AgentConnection:
     try:
         url = urlsplit(settings.public_api_url)
         if url.port == 0:
@@ -64,6 +77,11 @@ async def get_agent_connection() -> AgentConnection:
         raise HTTPException(
             status_code=503,
             detail="Agent access requires a valid HTTPS PUBLIC_API_URL (or local loopback HTTP).",
+        )
+    if _is_loopback_host(url.hostname) and not _is_loopback_host(request.url.hostname):
+        raise HTTPException(
+            status_code=503,
+            detail="PUBLIC_API_URL must be the public HTTPS API origin for remote agent connections.",
         )
     return AgentConnection(mcp_url=f"{url.scheme}://{url.netloc}/mcp/")
 
