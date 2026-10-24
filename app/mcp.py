@@ -1,8 +1,11 @@
 """Authenticated, read-only MCP access to the existing query endpoints."""
 
+import json
 import logging
-from collections.abc import Awaitable, Callable
+import re
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import date as TradingDate
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Annotated, Any, ParamSpec, TypeVar
 from urllib.parse import urlsplit
@@ -11,8 +14,9 @@ from fastapi import HTTPException
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from pydantic import Field
+from pydantic_core import to_json
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -58,6 +62,46 @@ DateLimit = Annotated[int, Field(ge=1, le=800)]
 Offset = Annotated[int, Field(ge=0)]
 Symbol = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9.^_-]+$")]
 Market = Annotated[str, Field(min_length=1, max_length=20)]
+_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}"
+    r"(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})?"
+)
+
+
+def _normalize_mcp_timestamps(value: Any) -> Any:
+    """Normalize serialized timestamps, including those in untyped payloads."""
+    if isinstance(value, dict):
+        return {key: _normalize_mcp_timestamps(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_mcp_timestamps(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_mcp_timestamps(item) for item in value)
+    if isinstance(value, TextContent):
+        try:
+            content = json.loads(value.text)
+        except json.JSONDecodeError:
+            return value
+        return value.model_copy(update={
+            "text": to_json(
+                _normalize_mcp_timestamps(content), fallback=str, indent=2,
+            ).decode(),
+        })
+    if isinstance(value, str) and _TIMESTAMP.fullmatch(value):
+        dt = datetime.fromisoformat(value.upper())
+        # MongoDB's naive timestamps already represent UTC; never use local time.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value
+
+
+class UTCFastMCP(FastMCP):
+    """Normalize output after Pydantic serialization, before MCP schema validation."""
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any]
+    ) -> Sequence[ContentBlock] | dict[str, Any]:
+        return _normalize_mcp_timestamps(await super().call_tool(name, arguments))
 
 
 class MCPAuthenticationMiddleware:
@@ -305,7 +349,7 @@ async def get_options_structure(ctx: Context, symbol: Symbol) -> OptionsStructur
 def create_mcp_server(config: Settings = settings) -> FastMCP:
     public_url = urlsplit(config.public_api_url)
     public_origin = f"{public_url.scheme}://{public_url.netloc}"
-    server = FastMCP(
+    server = UTCFastMCP(
         "PredixLab",
         instructions=(
             "Read-only market research tools. Authenticate using a dedicated PredixLab MCP API key. "
