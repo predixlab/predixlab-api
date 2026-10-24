@@ -4,6 +4,7 @@ import pytest
 from pymongo.errors import OperationFailure
 
 from app import database
+from app.services.agent_key_service import agent_key_service
 
 
 class FakeDatabase:
@@ -106,9 +107,28 @@ async def test_authentication_ttl_indexes():
     fake_database["user_sessions"].create_index.assert_any_await(
         "expires_at", expireAfterSeconds=0
     )
-    fake_database["agent_api_keys"].create_index.assert_awaited_once_with(
+
+
+async def test_agent_key_list_sort_matches_existing_index(agent_key_database, mock_user):
+    fake_database = FakeDatabase()
+    with patch.object(database.mongodb, "database", fake_database):
+        await database.create_indexes()
+
+    create_index = fake_database["agent_api_keys"].create_index
+    create_index.assert_awaited_once_with(
         [("user_id", 1), ("created_at", -1), ("_id", -1)]
     )
+    index_keys = create_index.await_args.args[0]
+    cursor = MagicMock()
+    cursor.sort.return_value = cursor
+    cursor.skip.return_value = cursor
+    cursor.limit.return_value = cursor
+    cursor.to_list = AsyncMock(return_value=[])
+
+    with patch.object(agent_key_database.agent_api_keys, "find", return_value=cursor):
+        await agent_key_service.list(mock_user.id, 10, 0)
+
+    cursor.sort.assert_called_once_with(index_keys)
 
 
 async def test_unsupported_custom_field_ttl_is_logged_and_nonfatal(caplog):

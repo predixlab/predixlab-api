@@ -15,6 +15,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.config import settings
 from app.core.dependencies import get_active_user_by_id
+from app.core.indexes import AGENT_API_KEYS_LIST_INDEX
 from app.core.rate_limits import enforce_mcp_request_limit
 from app.database import get_database
 from app.models.agent import (
@@ -188,7 +189,7 @@ class AgentKeyService:
         query = {"user_id": user_id}
         cursor = (
             collection.find(query)
-            .sort([("created_at", -1), ("_id", -1)])
+            .sort(AGENT_API_KEYS_LIST_INDEX)
             .skip(offset)
             .limit(limit)
         )
